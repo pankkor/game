@@ -1,10 +1,13 @@
 ## Not a Game
+
 That's totally not a game, rather a screensaver.
 
 - Uses CoreGraphics private API to show a window.
 - OpenGL to render instanced ~~sprites~~ particles.
 - Dumb code, no optimizations.
 - No libc (nostdlib).
+
+https://github.com/user-attachments/assets/7478f311-aa52-4cdb-b3cc-6ad01327fff5
 
 ### Supported Platforms
 - macOS AArch64 (clang)
