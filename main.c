@@ -392,7 +392,6 @@ struct sprites s_sprites;
 // --------------------------------------
 // Entry point
 // --------------------------------------
-
 void start(void) {
   // Create a window using Core Graphics private API
   CGError err;
