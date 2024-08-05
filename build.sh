@@ -13,7 +13,7 @@ cc_flags="$(cat compile_flags.txt)"
 frameworks="-framework OpenGL -framework CoreGraphics"
 
 # Build macOS aarch64 OpenGL
-build_cmd="clang $cc_flags -o build/$out $src $frameworks -e _start"
+build_cmd="clang $cc_flags -o build/$out $src $frameworks -e _start -nostdlib"
 
 echo "Building '$src' -> '$out'"
 echo "$build_cmd"

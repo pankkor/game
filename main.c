@@ -25,6 +25,9 @@ typedef i32                 b32;
 
 #define U64_MAX             -1UL
 
+#define FORCE_INLINE        inline __attribute__((always_inline))
+#define NO_RETURN           __attribute__((noreturn))
+
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
@@ -177,7 +180,7 @@ i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
 #define SYS_exit        1
 #define SYS_write       4
 
-__attribute__((noreturn)) void exit(i32 ec) {
+NO_RETURN void exit(i32 ec) {
   syscall1(SYS_exit, ec);
   __builtin_unreachable();
 }
@@ -251,17 +254,7 @@ void print_i64(i32 fd, i64 v) {
 // --------------------------------------
 // Expect/Assert
 // --------------------------------------
-#define STR1(s) # s
-#define STR(s) STR1(s)
-
-// EXPECT() is effectively Debug + Release assert
-#define EXPECT(condition, msg) expect_msg(!!(condition), \
-    __FILE__ ":" STR(__LINE__) ": Fatal: (" STR(condition) ") == 0\n"\
-    msg)
-
-static inline void expect_msg(i32 condition, const char *msg) {
-  if (!condition) {
-    print_cstr(STDERR, msg);
+FORCE_INLINE static void debugbreak(void) {
 #if defined(_MSC_VER)
     __debugbreak();
 #elif defined(__clang__)
@@ -271,6 +264,21 @@ static inline void expect_msg(i32 condition, const char *msg) {
     // __builtin_trap generates SIGILL and code after it will be optmized away.
     __builtin_trap();
 #endif
+}
+
+
+#define STR1(s) # s
+#define STR(s) STR1(s)
+
+// EXPECT() is effectively Debug + Release assert
+#define EXPECT(condition, msg) expect_msg(!!(condition), \
+    __FILE__ ":" STR(__LINE__) ": Fatal: (" STR(condition) ") == 0\n"\
+    msg)
+
+FORCE_INLINE static void expect_msg(i32 condition, const char *msg) {
+  if (!condition) {
+    print_cstr(STDERR, msg);
+    debugbreak();
   }
 }
 
@@ -278,7 +286,7 @@ static inline void expect_msg(i32 condition, const char *msg) {
     __FILE__ ":" STR(__LINE__) ": Warning: (" STR(condition) ") == 0\n"\
     msg)
 
-static inline void warn_if_msg(i32 condition, const char *msg) {
+FORCE_INLINE static void warn_if_msg(i32 condition, const char *msg) {
   if (condition) {
     print_cstr(STDERR, msg);
   }
@@ -287,15 +295,15 @@ static inline void warn_if_msg(i32 condition, const char *msg) {
 // --------------------------------------
 // Helpers
 // --------------------------------------
-f32 clampf32(f32 v, f32 lo, f32 hi) {
+FORCE_INLINE static f32 clampf32(f32 v, f32 lo, f32 hi) {
   return v > hi ? hi : v < lo ? lo : v;
 }
 
-f32 lerpf32(f32 k, f32 x, f32 y) {
+FORCE_INLINE static f32 lerpf32(f32 k, f32 x, f32 y) {
   return (1.0f - k) * x + y * k;
 }
 
-f32 absf32(f32 v) {
+FORCE_INLINE f32 absf32(f32 v) {
   f32 ret;
   __asm__ volatile (
     "fabs %s0, %s1\n"
@@ -329,6 +337,32 @@ u64 xorshift64(struct xorshift64_state *state) {
   return x;
 }
 
+FORCE_INLINE u64 read_cpu_timer_freq(void) {
+  u64 val;
+  __asm__ volatile("mrs %0, cntfrq_el0" : "=r" (val));
+  return val;
+}
+
+FORCE_INLINE u64 read_cpu_timer(void) {
+  u64 val;
+  // use isb to avoid speculative read of cntvct_el0
+  __asm__ volatile("isb;\n\tmrs %0, cntvct_el0" : "=r" (val) :: "memory");
+  return val;
+}
+
+// --------------------------------------
+// nostdlib stubs
+// --------------------------------------
+
+#if 1 // stack protector
+u64 __stack_chk_guard = 0xDEADBEEF;
+
+void __stack_chk_fail(void) {
+    print_cstr(STDERR, "Stack smashed!\n");
+    debugbreak();
+}
+#endif
+
 // --------------------------------------
 // Config
 // --------------------------------------
@@ -358,8 +392,6 @@ struct sprites s_sprites;
 // --------------------------------------
 // Entry point
 // --------------------------------------
-#include <sys/syscall.h>
-#include <unistd.h>
 
 void start(void) {
   // Create a window using Core Graphics private API
@@ -469,7 +501,6 @@ void start(void) {
   // Init
 
   // Clear color
-  f32 dt = 1.0f / 120.0f;
   f32 clear_col[4]  = {0.0f, 0.0f,  0.0f,  0.2f};
 
   // Shaders
@@ -584,15 +615,50 @@ void start(void) {
 
   print_cstr(STDOUT, "<Press Ctrl-C to exit>\n");
 
-  f64 ntemp = 0.0f;        // normalized "temperature" of the screen
-  f64 kcol_total;
+  f32 ntemp = 0.0f;        // normalized "temperature" of the screen
+  f32 kcol_total;
 
   f32 wind_vel[2] = {0};
   f32 wind_acc[2] = {WIND_ACC_X, WIND_ACC_Y};
 
   // Game loop
+  f32 cpu_timer_freq  = read_cpu_timer_freq();
+  f32 icpu_timer_freq = 1.0f / cpu_timer_freq;
+  u64 tsc             = read_cpu_timer();
+
+  f64 loop_s        = 0.0f;
+  u64 loop_count    = 0;
+  f64 print_dt_tsc  = tsc + 5.0f * cpu_timer_freq;
+
   while (1) {
-    kcol_total = 0.0f;
+    // dt bookkeeping
+    u64 new_tsc     = read_cpu_timer();
+    f32 dt          = (new_tsc - tsc) * icpu_timer_freq;
+    tsc             = new_tsc;
+    loop_s          += dt;
+    loop_count      += 1;
+
+    kcol_total      = 0.0f;
+
+#if 1 // Print averate tick time
+    if (tsc > print_dt_tsc) {
+      f64 avg_dt = loop_s / loop_count;
+
+      loop_s        = 0.0f;
+      loop_count    = 0;
+      print_dt_tsc  = tsc + 5.0f * cpu_timer_freq;
+
+      print_cstr(STDOUT, "Average dt: ");
+      print_i64(STDOUT, (u64)(avg_dt * 1e3));
+      print_cstr(STDOUT, "ms (");
+      print_i64(STDOUT, (u64)(avg_dt * 1e6));
+      print_cstr(STDOUT, "us)\n");
+    }
+#else
+    (void)loop_s;
+    (void)loop_count;
+    (void)print_dt_tsc;
+#endif
 
     // Update clear color based on the temperature
     clear_col[0]  = lerpf32(ntemp, 0.1f, 0.8f);
@@ -678,10 +744,8 @@ void start(void) {
 
     cgl_err = CGLFlushDrawable(glctx); // Swap
     WARN_IF(cgl_err, "Failed CGLFlushDrawable ");
-
-    // TODO: write a proper game loop
-    usleep(dt * 1e6f);
   }
+
 
   // Shutdown
   glDeleteShader(sprite_prog);
