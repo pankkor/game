@@ -119,9 +119,9 @@ i64 syscall1(i64 sys_num, i64 a0) {
   i64 ret;
   __asm__ volatile (
     "mov x16, %[sys_num]\n"   // syscall number
-    "mov x0, %[a0]\n"   // a0
-    "svc 0x80\n"
-    "mov %0, x0\n"
+    "mov x0,  %[a0]\n"   // a0
+    "svc      0x80\n"
+    "mov %0,  x0\n"
     : "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0)
     : "x16", "x0"
@@ -133,10 +133,10 @@ i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
   i64 ret;
   __asm__ volatile (
     "mov x16, %[sys_num]\n"
-    "mov x0, %[a0]\n"
-    "mov x1, %[a1]\n"
-    "svc 0x80\n"
-    "mov %0, x0\n"
+    "mov x0,  %[a0]\n"
+    "mov x1,  %[a1]\n"
+    "svc      0x80\n"
+    "mov %0,  x0\n"
     : "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0), [a1] "r" (a1)
     : "x16", "x0", "x1"
@@ -148,11 +148,11 @@ i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
   i64 ret;
   __asm__ volatile (
     "mov x16, %[sys_num]\n"
-    "mov x0, %[a0]\n"
-    "mov x1, %[a1]\n"
-    "mov x2, %[a2]\n"
-    "svc 0x80\n"
-    "mov %0, x0\n"
+    "mov x0,  %[a0]\n"
+    "mov x1,  %[a1]\n"
+    "mov x2,  %[a2]\n"
+    "svc      0x80\n"
+    "mov %0,  x0\n"
     : "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0), [a1] "r" (a1), [a2] "r" (a2)
     : "x16", "x0", "x1", "x2"
@@ -248,7 +248,7 @@ void print_i64(i32 fd, i64 v) {
     __FILE__ ":" STR(__LINE__) ": Fatal: (" STR(condition) ") == 0\n"\
     msg)
 
-static inline void expect_msg(int condition, const char *msg) {
+static inline void expect_msg(i32 condition, const char *msg) {
   if (!condition) {
     print_cstr(STDERR, msg);
 #if defined(_MSC_VER)
@@ -267,7 +267,7 @@ static inline void expect_msg(int condition, const char *msg) {
     __FILE__ ":" STR(__LINE__) ": Warning: (" STR(condition) ") == 0\n"\
     msg)
 
-static inline void warn_if_msg(int condition, const char *msg) {
+static inline void warn_if_msg(i32 condition, const char *msg) {
   if (condition) {
     print_cstr(STDERR, msg);
   }
@@ -282,6 +282,16 @@ f32 clampf32(f32 v, f32 lo, f32 hi) {
 
 f32 lerpf32(f32 k, f32 x, f32 y) {
   return (1.0f - k) * x + y * k;
+}
+
+f32 absf32(f32 v) {
+  f32 ret;
+  __asm__ volatile (
+    "fabs %s0, %s1\n"
+    : "=w" (ret)
+    : "w" (v)
+  );
+  return ret;
 }
 
 #define CHECK_GL_ERROR()                                                       \
@@ -308,14 +318,18 @@ u64 xorshift64(struct xorshift64_state *state) {
   return x;
 }
 
+#if 1 // Big and chunky sprites
+f32 SPRITE_SIZE = 0.04f;
 enum {SPRITES_COUNT = 1};
-// enum {SPRITES_COUNT = 1 * 1000};
-// enum {SPRITES_COUNT = 10 * 1000};
-// enum {SPRITES_COUNT = 1 * 1000 * 1000};
+#else // Chaos (5M sprites is still ok)
+f32 SPRITE_SIZE = 0.001f;
+enum {SPRITES_COUNT = 5 * 1000 * 1000};
+#endif
 
 struct sprites {
   f32 pos[3 * SPRITES_COUNT];
   f32 vel[2 * SPRITES_COUNT];
+  f32 acc[1 * SPRITES_COUNT]; // single abs acceleration for both x and y axis
   f32 col[4 * SPRITES_COUNT];
 };
 
@@ -340,7 +354,11 @@ void start(void) {
   CGRect            win_rect;
 
   cid = CGSMainConnectionID();
+  EXPECT(cid, "Failed CGSMainConnectionID()");
+
   did = CGMainDisplayID();
+  EXPECT(did, "Failed CGMainDisplayID()");
+
   win_rect  = CGDisplayBounds(did);
   view_rect = (CGRect){.size = win_rect.size};
 #if 0 // Full screen
@@ -432,10 +450,7 @@ void start(void) {
 
   // Clear color
   f32 dt = 1.0f / 120.0f;
-  f32 clear_c[4]  = {0.0f, 0.0f,  0.0f,  0.2f};
-  f32 clear_dc[4] = {0.1f, 0.01f, 0.05f, 0.1f};
-  f32 clear_lc[4] = {0.1f, 0.1f,  0.1f,  0.2f};
-  f32 clear_hc[4] = {1.0f, 1.0f,  1.0f,  0.4f};
+  f32 clear_col[4]  = {0.0f, 0.0f,  0.0f,  0.2f};
 
   // Shaders
   GLuint sprite_prog = glCreateProgram();
@@ -493,11 +508,13 @@ void start(void) {
   glGenBuffers(1, &pos_bo);
   glGenBuffers(1, &col_bo);
 
+  f32 sprite_size_05 = SPRITE_SIZE * 0.5f;
+
   GLfloat sprite_verts[] = {
-    -0.001f, -0.001f,
-     0.001f, -0.001f,
-    -0.001f,  0.001f,
-     0.001f,  0.001f
+    -sprite_size_05, -sprite_size_05,
+     sprite_size_05, -sprite_size_05,
+    -sprite_size_05,  sprite_size_05,
+     sprite_size_05,  sprite_size_05
   };
 
   glUseProgram(sprite_prog);
@@ -511,72 +528,106 @@ void start(void) {
   glEnableVertexAttribArray(0);
 
   // Logic
-  struct xorshift64_state st = {376586517380863};
-  for (i32 i = 0; i < SPRITES_COUNT; ++i) {
-    f32 r0 = xorshift64(&st) / (f32)U64_MAX;
-    f32 r1 = xorshift64(&st) / (f32)U64_MAX;
-    f32 r2 = xorshift64(&st) / (f32)U64_MAX;
-    f32 r3 = xorshift64(&st) / (f32)U64_MAX;
-    float k = (i + 1.0f) / SPRITES_COUNT;
+  struct xorshift64_state pos_st  = {376586517380863};
+  struct xorshift64_state vel_st  = {137382305742834};
 
-    s_sprites.pos[i * 3 + 0] = lerpf32(r0, -0.99,  0.99f);
-    s_sprites.pos[i * 3 + 1] = lerpf32(r1,  0.99, -0.99f);
+#define SPRITE_VEL_MAX  2.2f
+// #define SPRITE_VEL_DAMP 0.005f
+#define SPRITE_VEL_MAX2 (SPRITE_VEL_MAX * SPRITE_VEL_MAX)
+
+  for (i32 i = 0; i < SPRITES_COUNT; ++i) {
+    f32 kpos0   = xorshift64(&pos_st)  / (f32)U64_MAX;
+    f32 kpos1   = xorshift64(&pos_st)  / (f32)U64_MAX;
+    f32 kvel0   = xorshift64(&vel_st)  / (f32)U64_MAX;
+    f32 kvel1   = xorshift64(&vel_st)  / (f32)U64_MAX;
+
+    s_sprites.pos[i * 3 + 0] = lerpf32(kpos0, -0.99,  0.99f);
+    s_sprites.pos[i * 3 + 1] = lerpf32(kpos1,  0.99, -0.99f);
     s_sprites.pos[i * 3 + 3] = (f32)i / SPRITES_COUNT;
 
-    s_sprites.vel[i * 2 + 0] = lerpf32(r2, -2.0f, -0.2f);
-    s_sprites.vel[i * 2 + 1] = lerpf32(r3,  2.0f,  0.2f);
+    f32 velx                  = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+    f32 vely                  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+    s_sprites.vel[i * 2 + 0]  = velx;
+    s_sprites.vel[i * 2 + 1]  = vely;
 
-    s_sprites.col[i * 4 + 0] = lerpf32(k, 1.0f, 0.0f);
-    s_sprites.col[i * 4 + 1] = lerpf32(k, 0.0f, 1.0f);
-    s_sprites.col[i * 4 + 2] = lerpf32(k, 1.0f, 1.0f);
-    s_sprites.col[i * 4 + 3] = 1.0f;
+    s_sprites.acc[i]          = 1.0f;
+
+    // Rest of s_sprites.col is determined in during update
+    s_sprites.col[i * 4 + 1]  = 0.0f;
+    s_sprites.col[i * 4 + 3]  = 0.8f;
   }
 
   print_cstr(STDOUT, "<Press Ctrl-C to exit>\n");
 
+  f64 ntemp = 0.0f;        // normalized "temperature" of the screen
+  f64 kcol_total;
+
   // Game loop
   while (1) {
-    // Logic
-    // Update clear color
-    for (i32 i = 0; i < 4; ++i) {
-      f32 c       = clear_c[i];
-      f32 dc      = clear_dc[i];
-      f32 lc      = clear_lc[i];
-      f32 hc      = clear_hc[i];
+    kcol_total = 0.0f;
 
-      c           += dc * dt;
+    clear_col[0]  = lerpf32(ntemp, 0.1f, 0.8f);
+    clear_col[1]  = 0.0f;
+    clear_col[2]  = lerpf32(ntemp, 0.8f, 0.1f);
 
-      i32 mask    = c < lc || c > hc;
-      dc          *= (1 - (mask << 1));
-
-      clear_c[i]  = clampf32(c, lc, hc);
-      clear_dc[i] = dc;
-    }
-
-    // Update sprite pos
+    // Update sprites
     for (i32 i = 0; i < SPRITES_COUNT; ++i) {
       f32 x       = s_sprites.pos[i * 3 + 0];
       f32 y       = s_sprites.pos[i * 3 + 1];
-
       f32 velx    = s_sprites.vel[i * 2 + 0];
       f32 vely    = s_sprites.vel[i * 2 + 1];
+      f32 acc     = s_sprites.acc[i * 1 + 0];
+
+      f32 kcol    = (velx * velx + vely * vely)
+        / (SPRITE_VEL_MAX2 + SPRITE_VEL_MAX2);
+
+      // Change acceleration direction
+      i32 accmask = kcol < 0.01f || kcol > 0.99f;
+      acc         *= (1 - (accmask << 1));
+
+      f32 kx      = velx > 0.0f ? 1.0f : -1.0f; // direction of abs acceleration
+      f32 ky      = vely > 0.0f ? 1.0f : -1.0f;
+      velx        += kx * acc * dt;
+      vely        += ky * acc * dt;
+
+      {
+        print_i64(1, velx * 100);
+        print_cstr(1, ", ");
+        print_i64(1, vely * 100);
+        print_cstr(1, "\n");
+      }
+
+      velx        = clampf32(velx, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+      vely        = clampf32(vely, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
       x           += velx * dt;
       y           += vely * dt;
 
-      i32 maskx   = x < -1.0f || x > 1.0f;
-      i32 masky   = y < -1.0f || y > 1.0f;
-      velx        *= (1 - (maskx << 1));
-      vely        *= (1 - (masky << 1));
+      // Change direction when hitting the bounds
+      i32 dmaskx  = x < -1.0f || x > 1.0f;
+      i32 dmasky  = y < -1.0f || y > 1.0f;
+      velx        *= (1 - (dmaskx << 1));
+      vely        *= (1 - (dmasky << 1));
+      // velx        = clampf32(velx, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+      // vely        = clampf32(vely, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
-      s_sprites.vel[i * 2 + 0] = velx;
-      s_sprites.vel[i * 2 + 1] = vely;
-      s_sprites.pos[i * 3 + 0] = clampf32(x, -1.0, 1.0);
-      s_sprites.pos[i * 3 + 1] = clampf32(y, -1.0, 1.0);
+      x           = clampf32(x, -1.0, 1.0);
+      y           = clampf32(y, -1.0, 1.0);
+
+      s_sprites.pos[i * 3 + 0]  = x;
+      s_sprites.pos[i * 3 + 1]  = y;
+      s_sprites.vel[i * 2 + 0]  = velx;
+      s_sprites.vel[i * 2 + 1]  = vely;
+      s_sprites.acc[i * 1 + 0]  = acc;
+      s_sprites.col[i * 4 + 0]  = lerpf32(kcol, 0.0f, 1.0f);
+      s_sprites.col[i * 4 + 2]  = lerpf32(kcol, 1.0f, 0.0f);
+
+      kcol_total                += kcol;
     }
+    ntemp = kcol_total / SPRITES_COUNT;
 
     // Draw
-    glClearColor(clear_c[0], clear_c[1], clear_c[2], clear_c[3]);
+    glClearColor(clear_col[0], clear_col[1], clear_col[2], clear_col[3]);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Sprites
