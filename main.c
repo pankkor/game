@@ -6,9 +6,7 @@
 // ./build/main
 
 // TODO:
-// - write a proper game loopl, atm it's just usleep()
-// - sim space is in Normalized Device Coordinates (-1; 1),
-//   therefore x is scaled
+// - write a proper game loop calculating time between frames and simulation
 
 // --------------------------------------
 // Types
@@ -94,12 +92,16 @@ layout(location = 1) in vec3 v_pos;                                            \
 layout(location = 2) in vec4 v_col;                                            \
 layout(location = 3) in vec2 v_tex_coord;                                      \
                                                                                \
+uniform float iaspect;                                                         \
+                                                                               \
 out vec4 f_col;                                                                \
 out vec2 f_tex_coord;                                                          \
                                                                                \
 void main()                                                                    \
 {                                                                              \
-  gl_Position = vec4(vec3(v_vert, 0.0f) + v_pos, 1.0f);                        \
+  vec3 pos = vec3(v_vert, 0.0f) + v_pos;                                       \
+  pos.x *= iaspect;                                                            \
+  gl_Position = vec4(pos, 1.0f);                                               \
   f_col = v_col;                                                               \
   /*f_tex_coord = v_tex_coord;*/                                               \
 }                                                                              \
@@ -339,9 +341,9 @@ u64 xorshift64(struct xorshift64_state *state) {
 
 #if 1 // Big and chunky sprites
 f32 SPRITE_SIZE = 0.02f;
-enum {SPRITES_COUNT = 1000};
+enum {SPRITES_COUNT = 1 * 1000};
 #else // Chaos (5M sprites is still ok)
-f32 SPRITE_SIZE = 0.001f;
+f32 SPRITE_SIZE = 0.0005f;
 enum {SPRITES_COUNT = 5 * 1000 * 1000};
 #endif
 
@@ -517,7 +519,7 @@ void start(void) {
     glDeleteShader(frag_shader);
   }
 
-  f32 iratio = view_rect.size.height / view_rect.size.width;
+  f32 iaspect = view_rect.size.height / view_rect.size.width;
 
   GLuint vao;
   GLuint vert_bo;
@@ -531,14 +533,16 @@ void start(void) {
   f32 sprite_size_05 = SPRITE_SIZE * 0.5f;
 
   GLfloat sprite_verts[] = {
-    -sprite_size_05 * iratio, -sprite_size_05,
-     sprite_size_05 * iratio, -sprite_size_05,
-    -sprite_size_05 * iratio,  sprite_size_05,
-     sprite_size_05 * iratio,  sprite_size_05
+    -sprite_size_05, -sprite_size_05,
+     sprite_size_05, -sprite_size_05,
+    -sprite_size_05,  sprite_size_05,
+     sprite_size_05,  sprite_size_05
   };
 
   glUseProgram(sprite_prog);
   glBindVertexArray(vao);
+
+  glUniform1f(0, iaspect);
 
   // Vertices
   glBindBuffer(GL_ARRAY_BUFFER, vert_bo);
@@ -548,6 +552,12 @@ void start(void) {
   glEnableVertexAttribArray(0);
 
   // Logic
+  // Scale bounds normalized to [-1;1] to match monitor aspect ratio
+  f32 bounds[4] = {
+    -1.0f / iaspect, 1.0f / iaspect,
+    -1.0f, 1.0f,
+  };
+
   struct xorshift64_state pos_st  = {376586517380863};
   struct xorshift64_state vel_st  = {137382305742834};
 
@@ -558,8 +568,8 @@ void start(void) {
     f32 kvel0 = xorshift64(&vel_st) / (f32)U64_MAX;
     f32 kvel1 = xorshift64(&vel_st) / (f32)U64_MAX;
 
-    s_sprites.pos[i * 3 + 0]  = lerpf32(kpos0, -0.99,  0.99f);
-    s_sprites.pos[i * 3 + 1]  = lerpf32(kpos1,  0.99, -0.99f);
+    s_sprites.pos[i * 3 + 0]  = lerpf32(kpos0, bounds[0], bounds[1]);
+    s_sprites.pos[i * 3 + 1]  = lerpf32(kpos1, bounds[2], bounds[3]);
     s_sprites.pos[i * 3 + 3]  = (f32)i / SPRITES_COUNT;
 
     vel[0]                    = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
@@ -622,16 +632,13 @@ void start(void) {
       pos[1]    += vel[1] * dt;
 
       // Change direction when hitting the bounds
-      dmask[0]  = pos[0] < -1.0f || pos[0] > 1.0f;
-      dmask[1]  = pos[1] < -1.0f || pos[1] > 1.0f;
+      dmask[0]  = pos[0] < bounds[0] || pos[0] > bounds[1];
+      dmask[1]  = pos[1] < bounds[2] || pos[1] > bounds[3];
       vel[0]    *= (1 - (dmask[0] << 1));
       vel[1]    *= (1 - (dmask[1] << 1));
-      // // Dampen on hit
-      // vel[0]    *= (1.0f - 0.5f * dmask[0]);
-      // vel[1]    *= (1.0f - 0.5f * dmask[1]);
 
-      pos[0]    = clampf32(pos[0], -1.0, 1.0);
-      pos[1]    = clampf32(pos[1], -1.0, 1.0);
+      pos[0]    = clampf32(pos[0], bounds[0], bounds[1]);
+      pos[1]    = clampf32(pos[1], bounds[2], bounds[3]);
 
       s_sprites.pos[i * 3 + 0]  = pos[0];
       s_sprites.pos[i * 3 + 1]  = pos[1];
@@ -672,6 +679,7 @@ void start(void) {
     cgl_err = CGLFlushDrawable(glctx); // Swap
     WARN_IF(cgl_err, "Failed CGLFlushDrawable ");
 
+    // TODO: write a proper game loop
     usleep(dt * 1e6f);
   }
 
