@@ -354,10 +354,16 @@ void __stack_chk_fail(void) {
 // --------------------------------------
 // Config
 // --------------------------------------
+// Fixed simulation tick time, s.
+#define SIM_TICK        (1.0f / 240.0f)
+// Wind acceleration, wind changes direction when reaches it's max velocity.
 #define WIND_ACC_X      0.2f
 #define WIND_ACC_Y      -0.33f
+// Wind changes direction when reaches it's max velocity.
 #define WIND_VEL_MAX    1.1f
-#define SPRITE_VEL_MAX  0.6f
+// Initial Sprite velocities are in [-SPRITE_VEL_MAX, SPRITE_VEL_MAX] range.
+#define SPRITE_VEL_MAX  0.5f
+
 #define VEL_MAX         (SPRITE_VEL_MAX + WIND_VEL_MAX)
 #define VEL_MAX2        (VEL_MAX * VEL_MAX)
 
@@ -490,7 +496,7 @@ void start(void) {
   // Init
 
   // Clear color
-  f32 clear_col[4]  = {0.0f, 0.0f,  0.0f,  0.2f};
+  f32 clear_col[4]  = {0};
 
   // Shaders
   GLuint sprite_prog = glCreateProgram();
@@ -604,7 +610,7 @@ void start(void) {
   print_cstr(STDOUT, "<Press Ctrl-C to exit>\n");
 
   f32 ntemp = 0.0f;        // normalized "temperature" of the screen
-  f32 kcol_total;
+  f32 total_kcol;
 
   f32 wind_vel[2] = {0};
   f32 wind_acc[2] = {WIND_ACC_X, WIND_ACC_Y};
@@ -618,6 +624,8 @@ void start(void) {
   u64 loop_count      = 0;
   f64 print_dt_tsc    = tsc + 5.0f * cpu_timer_freq;
 
+  f32 sim_dt          = 0.0f;
+
   while (1) {
     // dt bookkeeping
     u64 new_tsc     = read_cpu_timer();
@@ -626,9 +634,7 @@ void start(void) {
     loop_s          += dt;
     loop_count      += 1;
 
-    kcol_total      = 0.0f;
-
-#if 1 // Print average tick time
+#if 1 // Print average tick time (print could block io)
     if (tsc > print_dt_tsc) {
       f64 avg_dt    = loop_s / loop_count;
 
@@ -647,71 +653,78 @@ void start(void) {
     (void)loop_count;
     (void)print_dt_tsc;
 #endif
+    // Update
+    // Accumulate passed time and run simulation with fixed `SIM_TICK` dt
+    sim_dt              += dt;
+    i32 sim_tick_count  = sim_dt / SIM_TICK;
+    sim_dt              = sim_dt - sim_tick_count * SIM_TICK;
 
-    // Update clear color based on the temperature
-    clear_col[0]  = lerpf32(ntemp, 0.1f, 0.8f);
-    clear_col[1]  = 0.0f;
-    clear_col[2]  = lerpf32(ntemp, 0.8f, 0.1f);
+    for (i32 sim_tick = 0; sim_tick < sim_tick_count; ++sim_tick) {
+      i32 wind_velmask[2] = {
+        wind_vel[0] < -WIND_VEL_MAX || wind_vel[0] > WIND_VEL_MAX,
+        wind_vel[1] < -WIND_VEL_MAX || wind_vel[1] > WIND_VEL_MAX
+      };
 
-    // Update sprites
-    i32 wind_velmask[2] = {
-      wind_vel[0] < -WIND_VEL_MAX || wind_vel[0] > WIND_VEL_MAX,
-      wind_vel[1] < -WIND_VEL_MAX || wind_vel[1] > WIND_VEL_MAX
-    };
-    wind_vel[0]   = clampf32(wind_vel[0], -WIND_VEL_MAX, WIND_VEL_MAX);
-    wind_vel[1]   = clampf32(wind_vel[1], -WIND_VEL_MAX, WIND_VEL_MAX);
-    wind_acc[0]   *= (1 - (wind_velmask[0] << 1));
-    wind_acc[1]   *= (1 - (wind_velmask[1] << 1));
-    wind_vel[0]   += wind_acc[0] * dt;
-    wind_vel[1]   += wind_acc[1] * dt;
+      wind_vel[0]   = clampf32(wind_vel[0], -WIND_VEL_MAX, WIND_VEL_MAX);
+      wind_vel[1]   = clampf32(wind_vel[1], -WIND_VEL_MAX, WIND_VEL_MAX);
+      wind_acc[0]   *= (1 - (wind_velmask[0] << 1));
+      wind_acc[1]   *= (1 - (wind_velmask[1] << 1));
+      wind_vel[0]   += wind_acc[0] * SIM_TICK;
+      wind_vel[1]   += wind_acc[1] * SIM_TICK;
 
-    for (i32 i = 0; i < SPRITES_COUNT; ++i) {
-      f32 pos[2];
-      f32 vel[2];
-      i32 dmask[2];
+      total_kcol    = 0.0f;
+      for (i32 i = 0; i < SPRITES_COUNT; ++i) {
+        f32 pos[2];
+        f32 vel[2];
+        i32 dmask[2];
 
-      pos[0]      = s_sprites.pos[i * 3 + 0];
-      pos[1]      = s_sprites.pos[i * 3 + 1];
-      vel[0]      = s_sprites.vel[i * 2 + 0];
-      vel[1]      = s_sprites.vel[i * 2 + 1];
+        pos[0]      = s_sprites.pos[i * 3 + 0];
+        pos[1]      = s_sprites.pos[i * 3 + 1];
+        vel[0]      = s_sprites.vel[i * 2 + 0];
+        vel[1]      = s_sprites.vel[i * 2 + 1];
 
-      f32 kcol    = (vel[0] * vel[0] + vel[1] * vel[1]) / (VEL_MAX2);
-      kcol        = clampf32(kcol, 0.0f, 1.0f);
+        f32 kcol    = (vel[0] * vel[0] + vel[1] * vel[1]) / (VEL_MAX2);
+        kcol        = clampf32(kcol, 0.0f, 1.0f);
 
-      // Apply wind
-      vel[0]      += wind_vel[0] * dt;
-      vel[1]      += wind_vel[1] * dt;
+        // Apply wind
+        vel[0]      += wind_vel[0] * SIM_TICK;
+        vel[1]      += wind_vel[1] * SIM_TICK;
 
-      pos[0]      += vel[0] * dt;
-      pos[1]      += vel[1] * dt;
+        pos[0]      += vel[0] * SIM_TICK;
+        pos[1]      += vel[1] * SIM_TICK;
 
-      // Change   direction when hitting the bounds
-      dmask[0]    = pos[0] < bounds[0] || pos[0] > bounds[1];
-      dmask[1]    = pos[1] < bounds[2] || pos[1] > bounds[3];
-      vel[0]      *= (1 - (dmask[0] << 1));
-      vel[1]      *= (1 - (dmask[1] << 1));
+        // Change direction on colliding with bounds
+        dmask[0]    = pos[0] < bounds[0] || pos[0] > bounds[1];
+        dmask[1]    = pos[1] < bounds[2] || pos[1] > bounds[3];
+        vel[0]      *= (1 - (dmask[0] << 1));
+        vel[1]      *= (1 - (dmask[1] << 1));
 
-      pos[0]      = clampf32(pos[0], bounds[0], bounds[1]);
-      pos[1]      = clampf32(pos[1], bounds[2], bounds[3]);
+        pos[0]      = clampf32(pos[0], bounds[0], bounds[1]);
+        pos[1]      = clampf32(pos[1], bounds[2], bounds[3]);
 
-      s_sprites.pos[i * 3 + 0]  = pos[0];
-      s_sprites.pos[i * 3 + 1]  = pos[1];
-      s_sprites.vel[i * 2 + 0]  = vel[0];
-      s_sprites.vel[i * 2 + 1]  = vel[1];
-      s_sprites.col[i * 4 + 0]  = lerpf32(kcol, 0.0f, 1.0f);
-      s_sprites.col[i * 4 + 2]  = lerpf32(kcol, 1.0f, 0.0f);
+        s_sprites.pos[i * 3 + 0]  = pos[0];
+        s_sprites.pos[i * 3 + 1]  = pos[1];
+        s_sprites.vel[i * 2 + 0]  = vel[0];
+        s_sprites.vel[i * 2 + 1]  = vel[1];
+        s_sprites.col[i * 4 + 0]  = lerpf32(kcol, 0.0f, 1.0f);
+        s_sprites.col[i * 4 + 2]  = lerpf32(kcol, 1.0f, 0.0f);
 
-      kcol_total  += kcol;
+        total_kcol  += kcol;
+      }
     }
-    ntemp = kcol_total / SPRITES_COUNT;
 
     // Draw
+    // Update clear color based on the temperature
+    ntemp         = total_kcol / SPRITES_COUNT;
+    clear_col[0]  = lerpf32(ntemp, 0.0f, 0.9f);
+    clear_col[1]  = 0.0f;
+    clear_col[2]  = lerpf32(ntemp, 0.9f, 0.0f);
+    clear_col[3]  = 0.25f;
+
     glClearColor(clear_col[0], clear_col[1], clear_col[2], clear_col[3]);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Sprites
-
-    // Positions
+    // Draw sprites
     glBindBuffer(GL_ARRAY_BUFFER, pos_bo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.pos), s_sprites.pos,
         GL_STATIC_DRAW);
@@ -719,7 +732,6 @@ void start(void) {
     glVertexAttribDivisor(1, 1);
     glEnableVertexAttribArray(1);
 
-    // Colors
     glBindBuffer(GL_ARRAY_BUFFER, col_bo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.col), s_sprites.col,
         GL_STATIC_DRAW);
