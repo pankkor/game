@@ -1,12 +1,10 @@
-// That's actually not a game
-// Only support Aarch64 macOS.
+// That is actually not a game, but a screensaver
+// Platforms
+//   macOS AArch64
 // Build
 //   ./build.sh
 // Run
-// ./build/main
-
-// TODO:
-// - write a proper game loop calculating time between frames and simulation
+//   ./build/main
 
 // --------------------------------------
 // Types
@@ -261,16 +259,16 @@ FORCE_INLINE static void debugbreak(void) {
     __builtin_debugtrap();
 #else
     // gcc doesn't have __builtin_debugtrap equivalent
+    // Beware:
     // __builtin_trap generates SIGILL and code after it will be optmized away.
     __builtin_trap();
 #endif
 }
 
-
 #define STR1(s) # s
 #define STR(s) STR1(s)
 
-// EXPECT() is effectively Debug + Release assert
+// EXPECT() behaves like Debug + Release assert
 #define EXPECT(condition, msg) expect_msg(!!(condition), \
     __FILE__ ":" STR(__LINE__) ": Fatal: (" STR(condition) ") == 0\n"\
     msg)
@@ -303,16 +301,6 @@ FORCE_INLINE static f32 lerpf32(f32 k, f32 x, f32 y) {
   return (1.0f - k) * x + y * k;
 }
 
-FORCE_INLINE f32 absf32(f32 v) {
-  f32 ret;
-  __asm__ volatile (
-    "fabs %s0, %s1\n"
-    : "=w" (ret)
-    : "w" (v)
-  );
-  return ret;
-}
-
 #define CHECK_GL_ERROR()                                                       \
 do {                                                                           \
   GLenum gl_err = glGetError();                                                \
@@ -329,7 +317,7 @@ struct xorshift64_state {
   u64 a;
 };
 
-u64 xorshift64(struct xorshift64_state *state) {
+u64 static xorshift64(struct xorshift64_state *state) {
   uint64_t x = state->a;
   x ^= x << 7;
   x ^= x >> 9;
@@ -374,12 +362,14 @@ void __stack_chk_fail(void) {
 #define VEL_MAX2        (VEL_MAX * VEL_MAX)
 
 #if 1 // Big and chunky sprites
-f32 SPRITE_SIZE = 0.02f;
+#define SPRITE_SIZE     0.02f
 enum {SPRITES_COUNT = 1 * 1000};
 #else // Chaos (5M sprites is still ok)
-f32 SPRITE_SIZE = 0.0005f;
+#define SPRITE_SIZE     0.0005f
 enum {SPRITES_COUNT = 5 * 1000 * 1000};
 #endif
+
+#define SPRITE_SIZE_05  (SPRITE_SIZE * 0.5f)
 
 struct sprites {
   f32 pos[3 * SPRITES_COUNT];
@@ -394,8 +384,8 @@ struct sprites s_sprites;
 // --------------------------------------
 void start(void) {
   // Create a window using Core Graphics private API
-  CGError err;
-  CGLError cgl_err;
+  CGError   cg_err;
+  CGLError  cgl_err;
 
   CGDirectDisplayID did;
   CGWindowID        wid;
@@ -413,8 +403,8 @@ void start(void) {
   win_rect  = CGDisplayBounds(did);
   view_rect = (CGRect){.size = win_rect.size};
 #if 0 // Full screen
-  err = CGDisplayCapture(did);
-  EXPECT(!err, "Failed to capture display\n");
+  cg_err = CGDisplayCapture(did);
+  EXPECT(!cg_err, "Failed to capture display\n");
 
   wid = CGShieldingWindowID(did);
   EXPECT(wid, "Failed to get shielding window\n");
@@ -423,30 +413,30 @@ void start(void) {
   CGSRegionRef      win_region;
   CGSRegionRef      view_region;
 
-  err = CGSNewRegionWithRect(&win_rect, &win_region);
-  EXPECT(!err, "Failed to create region\n");
+  cg_err = CGSNewRegionWithRect(&win_rect, &win_region);
+  EXPECT(!cg_err, "Failed to create region\n");
 
-  err = CGSNewRegionWithRect(&win_rect, &view_region);
-  EXPECT(!err, "Failed to create region\n");
+  cg_err = CGSNewRegionWithRect(&win_rect, &view_region);
+  EXPECT(!cg_err, "Failed to create region\n");
 
-  err = CGSNewWindow(cid, kCGBackingStoreBuffered, 0.0, 0.0, win_region, &wid);
-  EXPECT(!err, "Failed to create window\n");
+  cg_err = CGSNewWindow(cid, kCGBackingStoreBuffered, 0.0, 0.0, win_region, &wid);
+  EXPECT(!cg_err, "Failed to create window\n");
 
-  // Prevent window from blinking with uncleared surface
-  CGContextRef ctx = CGWindowContextCreate(cid, wid, 0);
-  CGContextClearRect(ctx, view_rect);
-  CGContextRelease(ctx);
+  // clear windows surfeace
+  CGContextRef cgctx = CGWindowContextCreate(cid, wid, 0);
+  CGContextClearRect(cgctx, view_rect);
+  CGContextRelease(cgctx);
 
-  err = CGSSetWindowLevel(cid, wid, kCGMaximumWindowLevel);
-  EXPECT(!err, "Failed to set window level\n");
+  cg_err = CGSSetWindowLevel(cid, wid, kCGMaximumWindowLevel);
+  EXPECT(!cg_err, "Failed to set window level\n");
 
-  err = CGSSetWindowOpacity(cid, wid, 0);
-  EXPECT(!err, "Failed to set window opacity\n");
+  cg_err = CGSSetWindowOpacity(cid, wid, 0);
+  EXPECT(!cg_err, "Failed to set window opacity\n");
 
-  err = CGSOrderWindow(cid, wid, kCGSOrderIn, 0); // make window appear
-  EXPECT(!err, "Failed to order window\n");
+  cg_err = CGSOrderWindow(cid, wid, kCGSOrderIn, 0); // make window appear
+  EXPECT(!cg_err, "Failed to order window\n");
 #endif
-  // Create OpenGL glctx
+  // Create OpenGL context
   CGLPixelFormatAttribute attributes[] = {
     kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_GL4_Core,
     kCGLPFAColorSize, (CGLPixelFormatAttribute)24,
@@ -474,8 +464,8 @@ void start(void) {
   CGLSetParameter(glctx, kCGLCPSurfaceOpacity, &surface_opacity);
 
   CGSSurfaceID sid;
-  err = CGSAddSurface(cid, wid, &sid);
-  EXPECT(!err, "Failed to add surface\n");
+  cg_err = CGSAddSurface(cid, wid, &sid);
+  EXPECT(!cg_err, "Failed to add surface\n");
 
   cgl_err = CGSSetSurfaceBounds(cid, wid, sid, view_rect);
   EXPECT(!cgl_err, "Failed to set surface bounds\n");
@@ -549,7 +539,8 @@ void start(void) {
     glDeleteShader(frag_shader);
   }
 
-  f32 iaspect = view_rect.size.height / view_rect.size.width;
+  f32 aspect  = view_rect.size.width / view_rect.size.height;
+  f32 iaspect = 1.0f / aspect;
 
   GLuint vao;
   GLuint vert_bo;
@@ -560,13 +551,11 @@ void start(void) {
   glGenBuffers(1, &pos_bo);
   glGenBuffers(1, &col_bo);
 
-  f32 sprite_size_05 = SPRITE_SIZE * 0.5f;
-
   GLfloat sprite_verts[] = {
-    -sprite_size_05, -sprite_size_05,
-     sprite_size_05, -sprite_size_05,
-    -sprite_size_05,  sprite_size_05,
-     sprite_size_05,  sprite_size_05
+    -SPRITE_SIZE_05, -SPRITE_SIZE_05,
+     SPRITE_SIZE_05, -SPRITE_SIZE_05,
+    -SPRITE_SIZE_05,  SPRITE_SIZE_05,
+     SPRITE_SIZE_05,  SPRITE_SIZE_05
   };
 
   glUseProgram(sprite_prog);
@@ -584,7 +573,7 @@ void start(void) {
   // Logic
   // Scale bounds normalized to [-1;1] to match monitor aspect ratio
   f32 bounds[4] = {
-    -1.0f / iaspect, 1.0f / iaspect,
+    -1.0f * aspect, 1.0f * aspect,
     -1.0f, 1.0f,
   };
 
@@ -625,9 +614,9 @@ void start(void) {
   f32 icpu_timer_freq = 1.0f / cpu_timer_freq;
   u64 tsc             = read_cpu_timer();
 
-  f64 loop_s        = 0.0f;
-  u64 loop_count    = 0;
-  f64 print_dt_tsc  = tsc + 5.0f * cpu_timer_freq;
+  f64 loop_s          = 0.0f;
+  u64 loop_count      = 0;
+  f64 print_dt_tsc    = tsc + 5.0f * cpu_timer_freq;
 
   while (1) {
     // dt bookkeeping
@@ -639,9 +628,9 @@ void start(void) {
 
     kcol_total      = 0.0f;
 
-#if 1 // Print averate tick time
+#if 1 // Print average tick time
     if (tsc > print_dt_tsc) {
-      f64 avg_dt = loop_s / loop_count;
+      f64 avg_dt    = loop_s / loop_count;
 
       loop_s        = 0.0f;
       loop_count    = 0;
@@ -681,29 +670,29 @@ void start(void) {
       f32 vel[2];
       i32 dmask[2];
 
-      pos[0]    = s_sprites.pos[i * 3 + 0];
-      pos[1]    = s_sprites.pos[i * 3 + 1];
-      vel[0]    = s_sprites.vel[i * 2 + 0];
-      vel[1]    = s_sprites.vel[i * 2 + 1];
+      pos[0]      = s_sprites.pos[i * 3 + 0];
+      pos[1]      = s_sprites.pos[i * 3 + 1];
+      vel[0]      = s_sprites.vel[i * 2 + 0];
+      vel[1]      = s_sprites.vel[i * 2 + 1];
 
-      f32 kcol  = (vel[0] * vel[0] + vel[1] * vel[1]) / (VEL_MAX2);
-      kcol      = clampf32(kcol, 0.0f, 1.0f);
+      f32 kcol    = (vel[0] * vel[0] + vel[1] * vel[1]) / (VEL_MAX2);
+      kcol        = clampf32(kcol, 0.0f, 1.0f);
 
       // Apply wind
-      vel[0]    += wind_vel[0] * dt;
-      vel[1]    += wind_vel[1] * dt;
+      vel[0]      += wind_vel[0] * dt;
+      vel[1]      += wind_vel[1] * dt;
 
-      pos[0]    += vel[0] * dt;
-      pos[1]    += vel[1] * dt;
+      pos[0]      += vel[0] * dt;
+      pos[1]      += vel[1] * dt;
 
-      // Change direction when hitting the bounds
-      dmask[0]  = pos[0] < bounds[0] || pos[0] > bounds[1];
-      dmask[1]  = pos[1] < bounds[2] || pos[1] > bounds[3];
-      vel[0]    *= (1 - (dmask[0] << 1));
-      vel[1]    *= (1 - (dmask[1] << 1));
+      // Change   direction when hitting the bounds
+      dmask[0]    = pos[0] < bounds[0] || pos[0] > bounds[1];
+      dmask[1]    = pos[1] < bounds[2] || pos[1] > bounds[3];
+      vel[0]      *= (1 - (dmask[0] << 1));
+      vel[1]      *= (1 - (dmask[1] << 1));
 
-      pos[0]    = clampf32(pos[0], bounds[0], bounds[1]);
-      pos[1]    = clampf32(pos[1], bounds[2], bounds[3]);
+      pos[0]      = clampf32(pos[0], bounds[0], bounds[1]);
+      pos[1]      = clampf32(pos[1], bounds[2], bounds[3]);
 
       s_sprites.pos[i * 3 + 0]  = pos[0];
       s_sprites.pos[i * 3 + 1]  = pos[1];
@@ -741,10 +730,9 @@ void start(void) {
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, SPRITES_COUNT);
     CHECK_GL_ERROR();
 
-    cgl_err = CGLFlushDrawable(glctx); // Swap
+    cgl_err = CGLFlushDrawable(glctx); // swap and present
     WARN_IF(cgl_err, "Failed CGLFlushDrawable ");
   }
-
 
   // Shutdown
   glDeleteShader(sprite_prog);
