@@ -25,6 +25,7 @@ typedef i32                 b32;
 
 #define FORCE_INLINE        inline __attribute__((always_inline))
 #define NO_RETURN           __attribute__((noreturn))
+#define ALIGNED(x)          __attribute__((aligned(x)))
 
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
@@ -378,9 +379,9 @@ enum {SPRITES_COUNT = 1 * 1000 * 1000};
 #define SPRITE_SIZE_05  (SPRITE_SIZE * 0.5f)
 
 struct sprites {
-  f32 pos[3 * SPRITES_COUNT];
-  f32 vel[2 * SPRITES_COUNT];
-  f32 col[4 * SPRITES_COUNT];
+  ALIGNED(16) f32 pos[3 * SPRITES_COUNT];
+  ALIGNED(16) f32 vel[2 * SPRITES_COUNT];
+  ALIGNED(16) f32 col[4 * SPRITES_COUNT];
 };
 
 struct sprites s_sprites;
