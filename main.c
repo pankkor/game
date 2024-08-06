@@ -657,6 +657,7 @@ void start(void) {
 #endif
     // Update
     // Accumulate passed time and run simulation with fixed `SIM_TICK` dt
+    // Yeah, that's not great when we'r CPU bound.
     sim_dt              += dt;
     i32 sim_tick_count  = sim_dt / SIM_TICK;
     sim_dt              = sim_dt - sim_tick_count * SIM_TICK;
