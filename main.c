@@ -369,10 +369,10 @@ void __stack_chk_fail(void) {
 
 #if 1 // Big and chunky sprites
 #define SPRITE_SIZE     0.02f
-enum {SPRITES_COUNT = 1 * 1000};
-#else // Chaos (5M sprites is still ok)
+enum {SPRITES_COUNT = 1024};
+#else // Chaos (1M sprites is still ok)
 #define SPRITE_SIZE     0.0005f
-enum {SPRITES_COUNT = 5 * 1000 * 1000};
+enum {SPRITES_COUNT = 1 * 1000 * 1000};
 #endif
 
 #define SPRITE_SIZE_05  (SPRITE_SIZE * 0.5f)
@@ -386,7 +386,7 @@ struct sprites {
 struct sprites s_sprites;
 
 // --------------------------------------
-// Entry point
+// Entry point (aka main)
 // --------------------------------------
 void start(void) {
   // Create a window using Core Graphics private API
@@ -620,9 +620,9 @@ void start(void) {
   f32 icpu_timer_freq = 1.0f / cpu_timer_freq;
   u64 tsc             = read_cpu_timer();
 
-  f64 loop_s          = 0.0f;
+  f32 loop_s          = 0.0f;
   u64 loop_count      = 0;
-  f64 print_dt_tsc    = tsc + 5.0f * cpu_timer_freq;
+  f32 print_dt_tsc    = tsc + 5.0f * cpu_timer_freq;
 
   f32 sim_dt          = 0.0f;
 
@@ -636,13 +636,15 @@ void start(void) {
 
 #if 1 // Print average tick time (print could block io)
     if (tsc > print_dt_tsc) {
-      f64 avg_dt    = loop_s / loop_count;
+      f32 avg_dt    = loop_s / loop_count;
 
       loop_s        = 0.0f;
       loop_count    = 0;
       print_dt_tsc  = tsc + 5.0f * cpu_timer_freq;
 
-      print_cstr(STDOUT, "Average dt: ");
+      print_cstr(STDOUT, "Average fps: ");
+      print_i64(STDOUT, (u64)(1.0f / avg_dt));
+      print_cstr(STDOUT, ", dt: ");
       print_i64(STDOUT, (u64)(avg_dt * 1e3));
       print_cstr(STDOUT, "ms (");
       print_i64(STDOUT, (u64)(avg_dt * 1e6));
