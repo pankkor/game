@@ -7,15 +7,20 @@ die() {
 
 mkdir -p build || die "failed to make 'build' directory!"
 
-src=main.c
-out=main
 cc_flags="$(cat compile_flags.txt)"
-frameworks="-framework OpenGL -framework CoreGraphics"
 
-# Build macOS aarch64 OpenGL
-build_cmd="clang $cc_flags -o build/$out $src $frameworks -e _start -nostdlib"
+for src in src/*.c; do
+  basename="${src##*/}"
+  basename_wo_ext="${basename%.*}"
 
-echo "Building '$src' -> '$out'"
-echo "$build_cmd"
+  out="build/$basename_wo_ext"
 
-$build_cmd || die "failed to build '$src'!"
+  # Build macOS aarch64 OpenGL
+  build_cmd="clang -o $out $src $cc_flags"
+
+  echo "Building '$src' -> '$out'"
+  echo "$build_cmd"
+
+  $build_cmd || die "failed to build '$src'!"
+  echo
+done

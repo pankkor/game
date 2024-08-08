@@ -4,3 +4,7 @@
 -Wpedantic
 -O3
 -g
+-nostdlib
+-e _start
+-framework OpenGL
+-framework CoreGraphics
