@@ -52,15 +52,12 @@ static const char * const s_sprite_vert_src = "                                \
 layout(location = 0) in vec2 v_vert;                                           \
 layout(location = 1) in vec3 v_pos;                                            \
 layout(location = 2) in vec4 v_col;                                            \
-layout(location = 3) in vec2 v_tex_coord;                                      \
                                                                                \
 uniform float iaspect;                                                         \
                                                                                \
 out vec4 f_col;                                                                \
-out vec2 f_tex_coord;                                                          \
                                                                                \
-void main()                                                                    \
-{                                                                              \
+void main(void) {                                                              \
   vec3 pos = vec3(v_vert, 0.0f) + v_pos;                                       \
   pos.x *= iaspect;                                                            \
   gl_Position = vec4(pos, 1.0f);                                               \
@@ -71,12 +68,10 @@ void main()                                                                    \
 static const char * const s_sprite_frag_src = "                                \
 #version 410 core                                                              \
 in vec4 f_col;                                                                 \
-/*in vec2 f_tex_coord;*/                                                       \
                                                                                \
 out vec4 frag_col;                                                             \
                                                                                \
-void main()                                                                    \
-{                                                                              \
+void main(void) {                                                              \
     frag_col = f_col;                                                          \
 }                                                                              \
 ";
