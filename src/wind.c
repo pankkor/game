@@ -147,7 +147,7 @@ void start(void) {
 
     s_sprites.pos[i * 3 + 0]  = lerpf32(kpos0, bounds[0], bounds[1]);
     s_sprites.pos[i * 3 + 1]  = lerpf32(kpos1, bounds[2], bounds[3]);
-    s_sprites.pos[i * 3 + 3]  = (f32)i / SPRITES_COUNT;
+    s_sprites.pos[i * 3 + 2]  = (f32)i / SPRITES_COUNT;
 
     vel[0]                    = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
     vel[1]                    = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
