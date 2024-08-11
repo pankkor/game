@@ -407,6 +407,16 @@ struct window {
 };
 
 // Init transparent window and OpenGL context
+//
+// TODO: init_window on the same WorkSPACE
+// This will require linking with CoreFoundation, for CFArray
+// Use private API:
+//   typedef unisgined long long CGSSpaceID;
+//   CGSSpaceID CGSGetActiveSpace(CGSConnectionID connection);
+//   CGSAddWindowsToSpaces(CGSConnectionID cid, CFArrayRef windows, CFArrayRef spaces);
+// Add created window to current worSPACE
+//   CGSSpaceID spid = CGSGetActiveSpace(cid);
+//   CGSAddWindowsToSpaces(CGSMainConnectionID(), CFArray with [wid], CFArray with [spid])
 struct window init_window(int is_full_screen) {
   CGDirectDisplayID did;
   CGWindowID        wid;
@@ -431,7 +441,6 @@ struct window init_window(int is_full_screen) {
 
     wid = CGShieldingWindowID(did);
     EXPECT(wid, "Failed to get shielding window\n");
-    win_rect = CGRectMake(800.0, 100.0, 800.0, 600.0);
   } else {
     CGSRegionRef      win_region;
     CGSRegionRef      view_region;
