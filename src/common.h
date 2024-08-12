@@ -39,6 +39,7 @@ typedef enum {
 
 typedef int CGSConnectionID;
 typedef int CGSSurfaceID;
+typedef unsigned long long CGSSpaceID;
 typedef CFTypeRef CGSRegionRef;
 
 extern CGSConnectionID CGSMainConnectionID(void);
@@ -81,17 +82,21 @@ extern CGError CGSSetSurfaceBounds(CGSConnectionID cid, CGWindowID wid,
 extern CGLError CGLSetSurface(CGLContextObj glctx, CGSConnectionID cid,
     CGWindowID wid, CGSSurfaceID sid);
 
+extern CGSSpaceID CGSGetActiveSpace(CGSConnectionID connection);
+
+extern void CGSAddWindowsToSpaces(CGSConnectionID cid, CFArrayRef windows,
+    CFArrayRef spaces);
 // --------------------------------------
 // syscall
 // --------------------------------------
 i64 syscall1(i64 sys_num, i64 a0) {
   i64 ret;
   __asm__ volatile (
-    "mov x16, %[sys_num]\n"   // syscall number
-    "mov x0,  %[a0]\n"        // a0
-    "svc      0x80\n"
-    "mov %0,  x0\n"
-    : "=r" (ret)
+    "mov x16,     %[sys_num]\n"   // syscall number
+    "mov x0,      %[a0]\n"        // a0
+    "svc          0x80\n"
+    "mov %[ret],  x0\n"
+    : [ret] "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0)
     : "x16", "x0"
   );
@@ -101,12 +106,12 @@ i64 syscall1(i64 sys_num, i64 a0) {
 i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
   i64 ret;
   __asm__ volatile (
-    "mov x16, %[sys_num]\n"
-    "mov x0,  %[a0]\n"
-    "mov x1,  %[a1]\n"
-    "svc      0x80\n"
-    "mov %0,  x0\n"
-    : "=r" (ret)
+    "mov x16,     %[sys_num]\n"
+    "mov x0,      %[a0]\n"
+    "mov x1,      %[a1]\n"
+    "svc          0x80\n"
+    "mov %[ret],  x0\n"
+    : [ret] "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0), [a1] "r" (a1)
     : "x16", "x0", "x1"
   );
@@ -116,13 +121,13 @@ i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
 i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
   i64 ret;
   __asm__ volatile (
-    "mov x16, %[sys_num]\n"
-    "mov x0,  %[a0]\n"
-    "mov x1,  %[a1]\n"
-    "mov x2,  %[a2]\n"
-    "svc      0x80\n"
-    "mov %0,  x0\n"
-    : "=r" (ret)
+    "mov x16,     %[sys_num]\n"
+    "mov x0,      %[a0]\n"
+    "mov x1,      %[a1]\n"
+    "mov x2,      %[a2]\n"
+    "svc          0x80\n"
+    "mov %[ret],  x0\n"
+    : [ret] "=r" (ret)
     : [sys_num] "r" (sys_num), [a0] "r" (a0), [a1] "r" (a1), [a2] "r" (a2)
     : "x16", "x0", "x1", "x2"
   );
@@ -301,7 +306,7 @@ FORCE_INLINE static void warn_if_msg(i32 condition, const char *msg) {
 // --------------------------------------
 // Helpers
 // --------------------------------------
-// TODO: this doesn't seem to be agood random
+// TODO: this doesn't seem to be a good random
 struct xorshift64_state {
   u64 a;
 };
@@ -326,12 +331,12 @@ FORCE_INLINE static f32 lerpf32(f32 k, f32 x, f32 y) {
 FORCE_INLINE static f32 fmodf32(f32 x, f32 y) {
     f32 res;
     __asm__ volatile (
-      "fdiv   s2, %s1, %s2\n"   // s2 = x / y
-      "frintm s2, s2\n"         // s2 = floor(s2)
-      "fmul   s2, s2, %s2\n"    // s2 = y * s2
-      "fsub   %s0, %s1, s2\n"   // res = s1 - s2
-      : "=w"  (res)
-      : "w"   (x), "w" (y)
+      "fdiv   s2, %s[x], %s[y]\n"     // s2 = x / y
+      "frintm s2, s2\n"               // s2 = floor(s2)
+      "fmul   s2, s2, %s[y]\n"        // s2 = y * s2
+      "fsub   %s[ret], %s[x], s2\n"   // res = s1 - s2
+      : [ret] "=w"  (res)
+      : [x] "w" (x), [y] "w" (y)
       : "s2"
     );
     return res;
@@ -340,10 +345,10 @@ FORCE_INLINE static f32 fmodf32(f32 x, f32 y) {
 FORCE_INLINE static f32 fracf32(f32 x) {
     f32 res;
     __asm__ volatile (
-        "frintm s1, %s1\n"      // s1 = floor(x)
-        "fsub   %s0, %s1, s1\n" // res = x - s1
-        : "=w"(res)
-        : "w"(x)
+        "frintm s1, %s[x]\n"          // s1 = floor(x)
+        "fsub   %s[ret], %s[x], s1\n" // res = x - s1
+        : [ret] "=w"(res)
+        : [x] "w" (x)
         : "s1"
     );
     return res;
@@ -379,7 +384,7 @@ FORCE_INLINE static u64 read_cpu_timer_freq(void) {
 FORCE_INLINE static u64 read_cpu_timer(void) {
   u64 val;
   // use isb to avoid speculative read of cntvct_el0
-  __asm__ volatile ("isb;\n\tmrs %0, cntvct_el0" : "=r" (val) :: "memory");
+  __asm__ volatile ("isb;\n\tmrs %0, cntvct_el0" : "=r" (val));
   return val;
 }
 
@@ -407,16 +412,6 @@ struct window {
 };
 
 // Init transparent window and OpenGL context
-//
-// TODO: init_window on the same WorkSPACE
-// This will require linking with CoreFoundation, for CFArray
-// Use private API:
-//   typedef unisgined long long CGSSpaceID;
-//   CGSSpaceID CGSGetActiveSpace(CGSConnectionID connection);
-//   CGSAddWindowsToSpaces(CGSConnectionID cid, CFArrayRef windows, CFArrayRef spaces);
-// Add created window to current worSPACE
-//   CGSSpaceID spid = CGSGetActiveSpace(cid);
-//   CGSAddWindowsToSpaces(CGSMainConnectionID(), CFArray with [wid], CFArray with [spid])
 struct window init_window(int is_full_screen) {
   CGDirectDisplayID did;
   CGWindowID        wid;
@@ -476,6 +471,22 @@ struct window init_window(int is_full_screen) {
     cg_err = CGSOrderWindow(cid, wid, kCGSOrderIn, 0);
     EXPECT(!cg_err, "CGSOrderWindow() failed\n");
   }
+
+#if 0
+  // Add window to the active Workspace. The window will always be in your face.
+  // This uses CFArray and CFNumber and requires to link with
+  //   -framework CoreFoundation
+  CGSSpaceID spid = CGSGetActiveSpace(cid);
+  const void *spid_num  = (void *)CFNumberCreate(0, kCFNumberIntType, &spid);
+  const void *wid_num   = (void *)CFNumberCreate(0, kCFNumberIntType, &wid);
+  CFArrayRef spids  = CFArrayCreate(0, &spid_num, 1, &kCFTypeArrayCallBacks);
+  CFArrayRef wids   = CFArrayCreate(0, &wid_num, 1, &kCFTypeArrayCallBacks);
+  CGSAddWindowsToSpaces(CGSMainConnectionID(), wids, spids);
+  CFRelease(spid_num);
+  CFRelease(wid_num);
+  CFRelease(spids);
+  CFRelease(wids);
+#endif
 
   // Create OpenGL context
   CGLPixelFormatAttribute attributes[] = {
