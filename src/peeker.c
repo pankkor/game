@@ -20,12 +20,17 @@
 #define SPRITE_SIZE     0.2f
 #define SPRITE_SIZE_05  (SPRITE_SIZE * 0.5f)
 
-enum {SPRITES_COUNT = 12};
+enum {SPRITES_COUNT = 32};
 
 enum sprite_state {
   SPRITE_STATE_MOVING   = 1 << 1,
   SPRITE_STATE_BLINKING = 1 << 2,
   SPRITE_STATE_SCALING  = 1 << 3,
+};
+
+enum game_state {
+  GAME_STATE_FADE_OUT         = 1 << 1,
+  GAME_STATE_SPRITES_FADE_IN  = 1 << 2,
 };
 
 struct sprites {
@@ -100,9 +105,9 @@ enum {
 #define TILE_U (1.0f / TILES_X_COUNT)
 #define TILE_V (1.0f / TILES_Y_COUNT)
 
-// 2 32x32 single channel sprites:
-// 0 - keyhole u[0.0, 1.0), v[0.0, 0.5)
-// 1 - key     u[0.0, 1.0), v[0.5, 1.0)
+// 32x32 R8 sprites:
+// #0 keyhole u[0.0, 1.0), v[0.0, 0.5)
+// #1 key     u[0.0, 1.0), v[0.5, 1.0)
 static u8 s_mask_data[MASK_W * MASH_H] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x77, 0x77, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x77, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -284,21 +289,35 @@ void start(void) {
   };
 
   struct xorshift64_state col_st  = {376586517380863};
+  struct xorshift64_state vel_st  = {137382305742834};
 
-  for (i32 i = 0; i < SPRITES_COUNT; ++i) {
+  // keyholes
+  i32 KEYHOLES_COUNT = SPRITES_COUNT * 0.5f;
+  i32 KEYS_COUNT = SPRITES_COUNT - KEYHOLES_COUNT;
+
+  for (i32 idx = 0; idx < KEYHOLES_COUNT; ++idx) {
+    i32 i     = idx;
     f32 kcol  = xorshift64(&col_st) / (f32)U64_MAX;
-    f32 k     = (f32)(i + 0.5f) / SPRITES_COUNT;
+    f32 kvel0 = xorshift64(&vel_st) / (f32)U64_MAX;
+    f32 kvel1 = xorshift64(&vel_st) / (f32)U64_MAX;
+    f32 k     = (f32)(idx + 0.5f) / KEYHOLES_COUNT;
 
-    s_sprites.pos[i * 3 + 0]        = lerpf32(k, bounds[0], bounds[1]);
-    s_sprites.pos[i * 3 + 1]        = lerpf32(k, bounds[2], bounds[3]);
+    // TODO
+    s_sprites.pos[i * 3 + 0]        = lerpf32(k, bounds[0] + 0.3f, bounds[1] - 0.3f);
+    s_sprites.pos[i * 3 + 1]        = 0.0f;
+    // s_sprites.pos[i * 3 + 0]        = -0.8f;
+    // s_sprites.pos[i * 3 + 1]        = -0.7f;
     s_sprites.pos[i * 3 + 2]        = (f32)i / SPRITES_COUNT;
 
-    s_sprites.vel[i * 2 + 0]        = 0.0f;
-    s_sprites.vel[i * 2 + 1]        = 0.5f;
+    // TODO
+    // s_sprites.vel[i * 2 + 0]        = 0.0f;
+    // s_sprites.vel[i * 2 + 1]        = 0.5f;
+    s_sprites.vel[i * 2 + 0]  = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+    s_sprites.vel[i * 2 + 1]  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
-    s_sprites.col[i * 4 + 0]        = lerpf32(kcol, 0.0f, 1.0f);
-    s_sprites.col[i * 4 + 1]        = lerpf32(kcol, 0.2f, 0.8f);
-    s_sprites.col[i * 4 + 2]        = lerpf32(kcol, 1.0f, 0.0f);
+    s_sprites.col[i * 4 + 0]        = 0.0f;
+    s_sprites.col[i * 4 + 1]        = lerpf32(kcol, 0.4f, 1.0f);
+    s_sprites.col[i * 4 + 2]        = 0.25f;
     s_sprites.col[i * 4 + 3]        = 0.2f;
 
     s_sprites.tile[i * 2 + 0]       = 0;
@@ -309,8 +328,42 @@ void start(void) {
     s_sprites.scale_vel[i * 2 + 0]  = 0.05f;
     s_sprites.scale_vel[i * 2 + 1]  = 0.05f;
 
-    s_sprites.state[i * 1 + 0] = SPRITE_STATE_MOVING | SPRITE_STATE_BLINKING;
+    s_sprites.state[i * 1 + 0] = SPRITE_STATE_MOVING;
   }
+
+  for (i32 idx = 0; idx < KEYS_COUNT; ++idx) {
+    i32 i     = idx + KEYHOLES_COUNT;
+    f32 kcol  = xorshift64(&col_st) / (f32)U64_MAX;
+    f32 kvel0 = xorshift64(&vel_st) / (f32)U64_MAX;
+    f32 kvel1 = xorshift64(&vel_st) / (f32)U64_MAX;
+    f32 k     = (f32)(idx + 0.5f) / KEYS_COUNT;
+
+    s_sprites.pos[i * 3 + 0]        = bounds[0];
+    s_sprites.pos[i * 3 + 1]        = lerpf32(k, bounds[2], bounds[3]);
+    s_sprites.pos[i * 3 + 2]        = (f32)i / SPRITES_COUNT;
+
+    // TODO
+    // s_sprites.vel[i * 2 + 0]        = 0.5f;
+    // s_sprites.vel[i * 2 + 1]        = 0.0f;
+    s_sprites.vel[i * 2 + 0]  = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+    s_sprites.vel[i * 2 + 1]  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+
+    s_sprites.col[i * 4 + 0]        = 0.0f;
+    s_sprites.col[i * 4 + 1]        = 0.25f;
+    s_sprites.col[i * 4 + 2]        = lerpf32(kcol, 1.0f, 0.4f);
+    s_sprites.col[i * 4 + 3]        = 0.2f;
+
+    s_sprites.tile[i * 2 + 0]       = 1;
+    s_sprites.tile[i * 2 + 1]       = 1;
+
+    s_sprites.scale[i * 2 + 0]      = 1.0f;
+    s_sprites.scale[i * 2 + 1]      = 1.0f;
+    s_sprites.scale_vel[i * 2 + 0]  = 0.05f;
+    s_sprites.scale_vel[i * 2 + 1]  = 0.05f;
+
+    s_sprites.state[i * 1 + 0] = SPRITE_STATE_MOVING;
+  }
+  f32 fade_out_a = 0.0f;
 
   // Game loop
   f32 cpu_timer_freq  = read_cpu_timer_freq();
@@ -362,6 +415,9 @@ void start(void) {
 
     for (i32 sim_tick = 0; sim_tick < sim_tick_count; ++sim_tick) {
       sim_elapsed += SIM_TICK;
+
+      fade_out_a = clampf32(fade_out_a + 1.0f * SIM_TICK, 0.0f, 1.0f);
+
       for (i32 i = 0; i < SPRITES_COUNT; ++i) {
         enum sprite_state state = s_sprites.state[i * 1 + 0];
         f32 pos[2];
@@ -396,10 +452,6 @@ void start(void) {
           vel[1]        *= (1 - (dmask[1] << 1));
           pos[0]        = clampf32(pos[0], bounds[0], bounds[1]);
           pos[1]        = clampf32(pos[1], bounds[2], bounds[3]);
-
-          // TODO: test
-          s_sprites.tile[i * 2 + 0] += dmask[0];
-          s_sprites.tile[i * 2 + 1] += dmask[1];
         }
 
         if (is_bit_set(state, SPRITE_STATE_SCALING)) {
@@ -431,10 +483,87 @@ void start(void) {
         s_sprites.scale_vel[i * 2 + 0]  = scale_vel[0];
         s_sprites.scale_vel[i * 2 + 1]  = scale_vel[1];
       }
+
+      // Circle collisions
+      f32 radii   = SPRITE_SIZE_05 + SPRITE_SIZE_05;
+      f32 radii2  = radii * radii;
+
+      for (i32 i = 0; i < SPRITES_COUNT - 1; ++i) {
+        f32 pos0[2];
+        f32 vel0[2];
+        pos0[0]   = s_sprites.pos[i * 3 + 0];
+        pos0[1]   = s_sprites.pos[i * 3 + 1];
+        vel0[0]   = s_sprites.vel[i * 2 + 0];
+        vel0[1]   = s_sprites.vel[i * 2 + 1];
+
+        for (i32 j = i + 1; j < SPRITES_COUNT; ++j) {
+          f32 pos1[2];
+          f32 vel1[2];
+          f32 d[2];           // distance between centers
+          f32 dunit[2];       // normalized d
+          f32 depth;
+          f32 dlen;
+          f32 dlen2;
+          f32 dotdvel0;
+          f32 dotdvel1;
+          f32 dvel[2];
+
+          pos1[0]   = s_sprites.pos[j * 3 + 0];
+          pos1[1]   = s_sprites.pos[j * 3 + 1];
+          vel1[0]   = s_sprites.vel[j * 2 + 0];
+          vel1[1]   = s_sprites.vel[j * 2 + 1];
+
+          d[0]      = pos1[0] - pos0[0];
+          d[1]      = pos1[1] - pos0[1];
+          dlen2     = d[0] * d[0] + d[1] * d[1];
+
+          if (dlen2 < radii2) {
+// TODO remove
+#if 0 // Blink red on collision
+            s_sprites.col[i * 4 + 0] = 1.0f;
+            s_sprites.col[j * 4 + 0] = 1.0f;
+#endif
+
+            // Depth and normal of collision intesection
+            dlen     = sqrtf32(dlen2);
+            depth    = radii - dlen;
+            dunit[0] = d[0] / dlen;
+            dunit[1] = d[1] / dlen;
+
+            // Repulse
+            pos0[0]  += dunit[0] * depth * -0.5;
+            pos0[1]  += dunit[1] * depth * -0.5;
+            pos1[0]  += dunit[0] * depth * 0.5;
+            pos1[1]  += dunit[1] * depth * 0.5;
+
+            // Ellastic collision
+            dotdvel0  = dunit[0] * vel0[0] + dunit[1] * vel0[1];
+            dotdvel1  = dunit[0] * vel1[0] + dunit[1] * vel1[1];
+
+            dvel[0]   = dunit[0] * (dotdvel1 - dotdvel0);
+            dvel[1]   = dunit[1] * (dotdvel1 - dotdvel0);
+
+            vel0[0]   += dvel[0];
+            vel0[1]   += dvel[1];
+            vel1[0]   -= dvel[0];
+            vel1[1]   -= dvel[1];
+          }
+
+          s_sprites.pos[i * 3 + 0]        = pos0[0];
+          s_sprites.pos[i * 3 + 1]        = pos0[1];
+          s_sprites.vel[i * 2 + 0]        = vel0[0];
+          s_sprites.vel[i * 2 + 1]        = vel0[1];
+
+          s_sprites.pos[j * 3 + 0]        = pos1[0];
+          s_sprites.pos[j * 3 + 1]        = pos1[1];
+          s_sprites.vel[j * 2 + 0]        = vel1[0];
+          s_sprites.vel[j * 2 + 1]        = vel1[1];
+        }
+      }
     }
 
     // Draw
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, fade_out_a);
     glClear(GL_COLOR_BUFFER_BIT);
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA);

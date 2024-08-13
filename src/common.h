@@ -21,6 +21,13 @@ typedef i32                 b32;
 #define NO_RETURN           __attribute__((noreturn))
 #define ALIGNED(x)          __attribute__((aligned(x)))
 
+#define SWAP(a, b)                                                             \
+  do {                                                                         \
+    __typeof__(a) tmp = (a);                                                   \
+    (a) = (b);                                                                 \
+    (b) = tmp;                                                                 \
+  } while (0)
+
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
@@ -327,31 +334,56 @@ FORCE_INLINE static f32 lerpf32(f32 k, f32 x, f32 y) {
   return (1.0f - k) * x + y * k;
 }
 
+FORCE_INLINE static f32 sqrtf32(f32 x) {
+  f32 res;
+  __asm__ volatile (
+    "fsqrt %s[res], %s[x]"
+    : [res] "=w" (res)
+    : [x] "w" (x)
+  );
+  return res;
+}
+
+FORCE_INLINE static f32 len32x2(const f32 a[2]) {
+  return sqrtf32(a[0] * a[0] + a[1] * a[1]);
+}
+
+FORCE_INLINE static void normf32x2(const f32 a[2], f32 out[2]) {
+  f32 l = len32x2(a);
+  out[0] /= l;
+  out[1] /= l;
+}
+
+FORCE_INLINE static void dotf32x2(const f32 a[2], const f32 b[2], f32 out[2]) {
+  out[0] = a[0] * b[0];
+  out[1] = a[1] * b[1];
+}
+
 // TODO: loses precisions when x and y range is big
 FORCE_INLINE static f32 fmodf32(f32 x, f32 y) {
-    f32 res;
-    __asm__ volatile (
-      "fdiv   s2, %s[x], %s[y]\n"     // s2 = x / y
-      "frintm s2, s2\n"               // s2 = floor(s2)
-      "fmul   s2, s2, %s[y]\n"        // s2 = y * s2
-      "fsub   %s[ret], %s[x], s2\n"   // res = s1 - s2
-      : [ret] "=w"  (res)
-      : [x] "w" (x), [y] "w" (y)
-      : "s2"
-    );
-    return res;
+  f32 res;
+  __asm__ volatile (
+    "fdiv   s2, %s[x], %s[y]\n"     // s2 = x / y
+    "frintm s2, s2\n"               // s2 = floor(s2)
+    "fmul   s2, s2, %s[y]\n"        // s2 = y * s2
+    "fsub   %s[ret], %s[x], s2\n"   // res = s1 - s2
+    : [ret] "=w"  (res)
+    : [x] "w" (x), [y] "w" (y)
+    : "s2"
+  );
+  return res;
 }
 
 FORCE_INLINE static f32 fracf32(f32 x) {
-    f32 res;
-    __asm__ volatile (
-        "frintm s1, %s[x]\n"          // s1 = floor(x)
-        "fsub   %s[ret], %s[x], s1\n" // res = x - s1
-        : [ret] "=w"(res)
-        : [x] "w" (x)
-        : "s1"
-    );
-    return res;
+  f32 res;
+  __asm__ volatile (
+    "frintm s1, %s[x]\n"            // s1 = floor(x)
+    "fsub   %s[ret], %s[x], s1\n"   // res = x - s1
+    : [ret] "=w"(res)
+    : [x] "w" (x)
+    : "s1"
+  );
+  return res;
 }
 
 // Sine in turns (1 turn == 2pi)
@@ -570,17 +602,16 @@ void shutdown_window(struct window *w) {
 // OpenGL helpers
 // --------------------------------------
 #define CHECK_GL_ERROR()                                                       \
-do {                                                                           \
-  GLenum gl_err = glGetError();                                                \
-  WARN_IF(gl_err, "");                                                         \
-  if (gl_err) {                                                                \
-    print_cstr(STDERR, "glGetError == ");                                      \
-    print_u64x(STDERR, gl_err);                                                \
-    print_cstr(STDERR, "\n");                                                  \
-    exit(1);                                                                   \
-  }                                                                            \
-} while (0)
-
+  do {                                                                         \
+    GLenum gl_err = glGetError();                                              \
+    WARN_IF(gl_err, "");                                                       \
+    if (gl_err) {                                                              \
+      print_cstr(STDERR, "glGetError == ");                                    \
+      print_u64x(STDERR, gl_err);                                              \
+      print_cstr(STDERR, "\n");                                                \
+      exit(1);                                                                 \
+    }                                                                          \
+  } while (0)
 
 // Create glCreateProgram and log compilation and linker errors
 GLuint create_gl_shader_program(const char *vert_glsl, const char *frag_glsl) {

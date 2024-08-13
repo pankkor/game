@@ -139,7 +139,6 @@ void start(void) {
   struct xorshift64_state vel_st  = {137382305742834};
 
   for (i32 i = 0; i < SPRITES_COUNT; ++i) {
-    f32 vel[2];
     f32 kpos0 = xorshift64(&pos_st) / (f32)U64_MAX;
     f32 kpos1 = xorshift64(&pos_st) / (f32)U64_MAX;
     f32 kvel0 = xorshift64(&vel_st) / (f32)U64_MAX;
@@ -149,10 +148,8 @@ void start(void) {
     s_sprites.pos[i * 3 + 1]  = lerpf32(kpos1, bounds[2], bounds[3]);
     s_sprites.pos[i * 3 + 2]  = (f32)i / SPRITES_COUNT;
 
-    vel[0]                    = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
-    vel[1]                    = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
-    s_sprites.vel[i * 2 + 0]  = vel[0];
-    s_sprites.vel[i * 2 + 1]  = vel[1];
+    s_sprites.vel[i * 2 + 0]  = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
+    s_sprites.vel[i * 2 + 1]  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
     // Rest of s_sprites.col is determined in during update
     s_sprites.col[i * 4 + 1]  = 0.0f;
