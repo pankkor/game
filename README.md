@@ -17,10 +17,13 @@ and are blown by the wind. They change color depending on their speed.
 
 https://github.com/user-attachments/assets/7478f311-aa52-4cdb-b3cc-6ad01327fff5
 
-## Keyhole Peeker screensaver
-`src/peeker.c`
+## Keys and Keyholes screensaver
+`src/keyhole.c`
 
-Screen turns black and you can only see your desktop through the flying holes.
+Keys and Keyholes flying around and colliding.
+Matching keys and keyholes dissapear.
+
+- Simple collision of circles on CPU.
 
 ### Supported Platforms
 - macOS AArch64 (clang)

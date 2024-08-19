@@ -2,6 +2,7 @@
 -Wall
 -Wextra
 -Wpedantic
+-Wno-fixed-enum-extension
 -O1
 -g
 -nostdlib

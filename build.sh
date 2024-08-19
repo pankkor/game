@@ -22,5 +22,4 @@ for src in src/*.c; do
   echo "$build_cmd"
 
   $build_cmd || die "failed to build '$src'!"
-  echo
 done
