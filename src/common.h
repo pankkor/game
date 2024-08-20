@@ -481,7 +481,7 @@ struct window init_window(int is_full_screen) {
     cg_err = CGSNewWindow(cid, kCGBackingStoreBuffered, 0.0, 0.0, win_region, &wid);
     EXPECT(!cg_err, "CGSNewWindow() failed\n");
 
-    // clear windows surfeace
+    // clear windows surface
     CGContextRef cgctx = CGWindowContextCreate(cid, wid, 0);
     CGContextClearRect(cgctx, view_rect);
     CGContextRelease(cgctx);

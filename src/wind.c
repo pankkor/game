@@ -53,26 +53,37 @@ layout(location = 0) in vec2 v_vert;                                           \
 layout(location = 1) in vec3 v_pos;                                            \
 layout(location = 2) in vec4 v_col;                                            \
                                                                                \
-uniform float iaspect;                                                         \
+uniform float u_iaspect;                                                       \
                                                                                \
 out vec4 f_col;                                                                \
+out vec2 f_pos;                                                                \
                                                                                \
 void main(void) {                                                              \
   vec3 pos = vec3(v_vert, 0.0f) + v_pos;                                       \
-  pos.x *= iaspect;                                                            \
+  pos.x *= u_iaspect;                                                          \
   gl_Position = vec4(pos, 1.0f);                                               \
   f_col = v_col;                                                               \
+  f_pos = vec2(v_pos.x * u_iaspect, v_pos.y) * 0.5 + 0.5;                      \
 }                                                                              \
 ";
 
 static const char * const s_sprite_frag_src = "                                \
 #version 410 core                                                              \
 in vec4 f_col;                                                                 \
+in vec2 f_pos;                                                                 \
+                                                                               \
+uniform vec2  u_resolution;                                                    \
+uniform float u_iaspect;                                                       \
                                                                                \
 out vec4 frag_col;                                                             \
                                                                                \
 void main(void) {                                                              \
-    frag_col = f_col;                                                          \
+    vec2 uv = gl_FragCoord.xy / u_resolution.xy;                               \
+    vec2 p = f_pos - uv;                                                       \
+    p.x /= u_iaspect;                                                          \
+    float d = length(p) - 0.005;                                               \
+    float a = smoothstep(0.001, -0.001, d);                                    \
+    frag_col = vec4(f_col.rgb, a);                                             \
 }                                                                              \
 ";
 
@@ -81,6 +92,8 @@ void main(void) {                                                              \
 // --------------------------------------
 void start(void) {
   // Init
+  install_keylistener();
+
   CGLError cgl_err;
   struct window w = init_window(0 /*is_full_screen*/);
 
@@ -119,7 +132,9 @@ void start(void) {
   glUseProgram(sprite_prog);
   glBindVertexArray(vao);
 
-  glUniform1f(0, iaspect);
+  glUniform1f(glGetUniformLocation(sprite_prog, "u_iaspect"), iaspect);
+  glUniform2f(glGetUniformLocation(sprite_prog, "u_resolution"),
+      w.rect[2], w.rect[3]);
 
   // Vertices
   glBindBuffer(GL_ARRAY_BUFFER, vert_bo);
@@ -130,6 +145,7 @@ void start(void) {
 
   // Logic
   // Scale bounds normalized to [-1;1] to match monitor aspect ratio
+  // [left, right, down, up]
   f32 bounds[4] = {
     -1.0f * aspect, 1.0f * aspect,
     -1.0f, 1.0f,
@@ -273,6 +289,8 @@ void start(void) {
 
     glClearColor(clear_col[0], clear_col[1], clear_col[2], clear_col[3]);
     glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Draw sprites
     glBindBuffer(GL_ARRAY_BUFFER, pos_bo);

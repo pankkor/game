@@ -9,3 +9,4 @@
 -e _start
 -framework OpenGL
 -framework CoreGraphics
+-framework ApplicationServices
