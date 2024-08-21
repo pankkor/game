@@ -59,7 +59,8 @@ out vec4 f_col;                                                                \
 out vec2 f_pos;                                                                \
                                                                                \
 void main(void) {                                                              \
-  vec3 pos = vec3(v_vert, 0.0f) + v_pos;                                       \
+  float h = mix(1.0, 0.5, v_col.r);                                            \
+  vec3 pos = vec3(v_vert * h, 0.0f) + v_pos;                                   \
   pos.x *= iaspect;                                                            \
   gl_Position = vec4(pos, 1.0f);                                               \
   f_col = v_col;                                                               \
@@ -78,12 +79,13 @@ uniform float iaspect;                                                         \
 out vec4 frag_col;                                                             \
                                                                                \
 void main(void) {                                                              \
-    vec2 uv = gl_FragCoord.xy / resolution.xy;                                 \
-    vec2 p = f_pos - uv;                                                       \
-    p.x /= iaspect;                                                            \
-    float d = length(p) - 0.005;                                               \
-    float a = smoothstep(0.001, -0.001, d);                                    \
-    frag_col = vec4(f_col.rgb, a);                                             \
+  float h = mix(1.0, 0.5, f_col.r);                                            \
+  vec2 uv = gl_FragCoord.xy / resolution.xy;                                   \
+  vec2 p = f_pos - uv;                                                         \
+  p.x /= iaspect;                                                              \
+  float d = length(p) - 0.005 * h;                                             \
+  float a = smoothstep(0.001, -0.001, d);                                      \
+  frag_col = vec4(f_col.rgb, a);                                               \
 }                                                                              \
 ";
 
