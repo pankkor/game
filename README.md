@@ -15,7 +15,7 @@ and are blown by the wind. They change color depending on their speed.
 - Sprite update is simulated on CPU without any optimization.
 - Ofc compiler fails to autovectorize sprite update.
 
-https://github.com/user-attachments/assets/7478f311-aa52-4cdb-b3cc-6ad01327fff5
+https://github.com/user-attachments/assets/dc945f6e-4408-4466-b5a7-13c9fad3a36e
 
 ## Keys and Keyholes screensaver
 `src/keyhole.c`
@@ -24,6 +24,8 @@ Keys and Keyholes flying around and colliding.
 Matching keys and keyholes dissapear.
 
 - Simple collision of circles on CPU.
+
+https://github.com/user-attachments/assets/eb9552e4-32e3-4b9c-8be6-1a401453ae10
 
 ### Supported Platforms
 - macOS AArch64 (clang)
