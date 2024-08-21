@@ -3,8 +3,8 @@
 - CoreGraphics private API to show a window.
 - OpenGL to render.
 - No libc (-nostdlib).
-- Had no time for optimizations.
-- To exit press Ctrl-C.
+- Not optimizated.
+- To exit press ESC or Ctrl-C.
 
 ## Molecular Wind screensaver
 `src/wind.c`

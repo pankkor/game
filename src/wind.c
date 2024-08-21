@@ -92,16 +92,17 @@ void main(void) {                                                              \
 // --------------------------------------
 void start(void) {
   // Init
-  install_keylistener();
+  struct event_loop loop;
+  struct window w;
 
-  CGLError cgl_err;
-  struct window w = init_window(0 /*is_full_screen*/);
+  event_loop_init(&loop);
+  window_init(&w, 0 /*is_full_screen*/);
 
   const GLubyte* version_cstr = glGetString(GL_VERSION);
   print_cstr(STDOUT, "OpenGL version: \n");
   print_cstr(STDOUT, (const char *)version_cstr);
   print_cstr(STDOUT, "\n\n");
-  print_cstr(STDOUT, "<Press Ctrl-C to exit>\n");
+  print_cstr(STDOUT, "<Press ESC or Ctrl-C to exit>\n");
 
   GLuint sprite_prog = create_gl_shader_program(
     s_sprite_vert_src,
@@ -199,19 +200,11 @@ void start(void) {
 
 #if 1 // Print average tick time (print could block io)
     if (tsc > print_dt_tsc) {
-      f32 avg_dt    = loop_s / loop_count;
+      print_avg_dt_fps(loop_s / loop_count);
 
       loop_s        = 0.0f;
       loop_count    = 0;
       print_dt_tsc  = tsc + 5.0f * cpu_timer_freq;
-
-      print_cstr(STDOUT, "Average fps: ");
-      print_i64(STDOUT, (u64)(1.0f / avg_dt));
-      print_cstr(STDOUT, ", dt: ");
-      print_i64(STDOUT, (u64)(avg_dt * 1e3));
-      print_cstr(STDOUT, "ms (");
-      print_i64(STDOUT, (u64)(avg_dt * 1e6));
-      print_cstr(STDOUT, "us)\n");
     }
 #else
     (void)loop_s;
@@ -310,9 +303,17 @@ void start(void) {
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, SPRITES_COUNT);
     CHECK_GL_ERROR();
 
-    cgl_err = CGLFlushDrawable(w.glctx); // swap and present
-    WARN_IF(cgl_err, "CGLFlushDrawable() failed\n");
+    window_flush(&w);
+
+    // Step through event loop once, updating input events
+    event_loop_step(&loop);
+
+    // ESC to exit
+    if (loop.keycodes.e[KC_ESC]) {
+      break;
+    }
   }
+  print_avg_dt_fps(loop_s / loop_count);
 
   // Shutdown
   glDeleteShader(sprite_prog);
@@ -321,7 +322,8 @@ void start(void) {
   glDeleteBuffers(1, &col_bo);
   glDeleteVertexArrays(1, &vao);
 
-  shutdown_window(&w);
+  window_shutdown(&w);
+  event_loop_shutdown(&loop);
 
   exit(0);
 }

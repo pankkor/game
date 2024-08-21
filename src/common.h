@@ -420,6 +420,17 @@ FORCE_INLINE static u64 read_cpu_timer(void) {
   return val;
 }
 
+// Print average FPS and Delta time
+FORCE_INLINE static void print_avg_dt_fps(f32 avg_dt) {
+  print_cstr(STDOUT, "Average fps: ");
+  print_i64(STDOUT, (u64)(1.0f / avg_dt));
+  print_cstr(STDOUT, ", dt: ");
+  print_i64(STDOUT, (u64)(avg_dt * 1e3));
+  print_cstr(STDOUT, "ms (");
+  print_i64(STDOUT, (u64)(avg_dt * 1e6));
+  print_cstr(STDOUT, "us)\n");
+}
+
 // --------------------------------------
 // nostdlib stubs
 // --------------------------------------
@@ -444,7 +455,7 @@ struct window {
 };
 
 // Init transparent window and OpenGL context
-struct window init_window(int is_full_screen) {
+void window_init(struct window *w, int is_full_screen) {
   CGDirectDisplayID did;
   CGWindowID        wid;
   CGSConnectionID   cid;
@@ -567,7 +578,7 @@ struct window init_window(int is_full_screen) {
   cgl_err = CGLSetCurrentContext(glctx);
   EXPECT(!cgl_err, "CGLSetCurrentContext() failed\n");
 
-  return (struct window){
+  *w = (struct window){
     .did    = did,
     .cid    = cid,
     .wid    = wid,
@@ -581,7 +592,7 @@ struct window init_window(int is_full_screen) {
   };
 }
 
-void shutdown_window(struct window *w) {
+void window_shutdown(struct window *w) {
   if (w->glctx) {
     CGLDestroyContext(w->glctx);
   }
@@ -592,10 +603,133 @@ void shutdown_window(struct window *w) {
     CGDisplayRelease(w->did);
   }
 
-  w->did = 0;
-  w->cid = 0;
-  w->wid = 0;
-  w->glctx = 0;
+  *w = (struct window){0};
+}
+
+
+// Swap and present.
+// Returns 0 on success.
+i32 window_flush(struct window *w) {
+  CGLError cgl_err = CGLFlushDrawable(w->glctx);
+  WARN_IF(cgl_err, "CGLFlushDrawable() failed\n");
+  return cgl_err;
+}
+
+// --------------------------------------
+// Event Loop
+// --------------------------------------
+
+// Key Codes. Direct mapping to kVK_* virutal keycodes.
+// All virtual keycode constants are defined in HIToolbox/Events.h
+// #include <Carbon/Carbon.h>
+// and go to definition of kVK_Escape
+enum KC : u8 {
+  KC_RET    = 0x24,
+  KC_TAB    = 0x30,
+  KC_SPACE  = 0x31,
+  KC_DEL    = 0x33,
+  KC_ESC    = 0x35,
+
+  KC_SENTINEL, // keep it the biggest value in the enum
+};
+
+enum {KC_SIZE=256};
+static_assert(KC_SENTINEL < KC_SIZE, "s_keycodes can't contain enum KC");
+
+struct keycodes {
+  enum KC e[KC_SIZE]; // TODO: pack it
+};
+
+struct event_loop {
+  struct keycodes     keycodes;
+  CFMachPortRef       event_tap;
+  CFRunLoopSourceRef  source;
+  CFRunLoopRef        runloop;
+};
+
+CGEventRef event_handler(CGEventTapProxy proxy, CGEventType type,
+    CGEventRef event, void *userdata)
+{
+  (void)proxy;
+
+  struct event_loop *loop = userdata;
+  CGKeyCode keycode;
+
+  switch (type)
+  {
+    case kCGEventTapDisabledByTimeout:
+    case kCGEventTapDisabledByUserInput:
+      EXPECT(0, "Event tap was cancelled");
+      break;
+
+    case kCGEventKeyDown:
+    case kCGEventKeyUp:
+      keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+      WARN_IF(keycode >= KC_SIZE, "keycode value >= 256");
+      if (keycode < KC_SIZE) {
+        loop->keycodes.e[keycode] = type == kCGEventKeyDown;
+      }
+      break;
+
+    default:
+      WARN_IF(1, "Unhandled event type");
+      break;
+  }
+  return event;
+}
+
+// Must be paired with event_loop_shutdown()
+void event_loop_init(struct event_loop *loop) {
+  CFMachPortRef       event_tap;
+  CGEventMask         event_mask;
+  CFRunLoopSourceRef  source;
+  CFRunLoopRef        runloop;
+
+  event_mask  = (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp);
+  event_tap   = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
+      event_mask, event_handler, loop);
+  EXPECT(event_tap, "CGEventTapCreate() failed");
+
+  source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, event_tap, 0);
+  EXPECT(source, "CGEventTapCreate() failed");
+
+  runloop = CFRunLoopGetCurrent();
+  CFRetain(runloop);
+
+  CFRunLoopAddSource(runloop, source, kCFRunLoopDefaultMode);
+
+  CGEventTapEnable(event_tap, 1);
+
+  *loop = (struct event_loop){
+    .keycodes   = {0},
+    .event_tap  = event_tap,
+    .source     = source,
+    .runloop    = runloop,
+  };
+}
+
+// Runs Run Loop one time, updates input events (loop->keycodes)
+void event_loop_step(struct event_loop *loop) {
+#if 0
+  // Signal and wakeup are not needed since we only have one RunLoop atm.
+  CFRunLoopSourceSignal(loop->source);
+  CFRunLoopWakeUp(loop->runloop);
+#else
+  (void)loop;
+#endif
+  // TODO this should be in a loop
+  CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1);
+}
+
+void event_loop_shutdown(struct event_loop *loop) {
+  CGEventTapEnable(loop->event_tap, 0);
+  CFMachPortInvalidate(loop->event_tap);
+  CFRunLoopRemoveSource(loop->runloop, loop->source, kCFRunLoopDefaultMode);
+  CFRelease(loop->source);
+  CFRelease(loop->event_tap);
+  CFRelease(loop->runloop);
+
+  *loop = (struct event_loop){0};
 }
 
 // --------------------------------------
