@@ -479,7 +479,7 @@ void start(void) {
             col[0]      = s_col_palettes[state.palette][0];
             col[1]      = s_col_palettes[state.palette][1];
             col[2]      = s_col_palettes[state.palette][2];
-            col[3]      = 0.05f;
+            col[3]      = 0.15f;
             state.flags = (state.flags & SPRITE_STATE_KEY) |
               SPRITE_STATE_COLLIDE | SPRITE_STATE_MOVE | SPRITE_STATE_FADE_IN;
           }

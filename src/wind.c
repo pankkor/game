@@ -168,8 +168,8 @@ void start(void) {
     s_sprites.vel[i * 2 + 1]  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
     // Rest of s_sprites.col is determined in during update
-    s_sprites.col[i * 4 + 1]  = 0.0f;
-    s_sprites.col[i * 4 + 3]  = 0.8f;
+    s_sprites.col[i * 4 + 1]  = 0.1f;
+    s_sprites.col[i * 4 + 3]  = 0.9f;
   }
 
   f32 ntemp = 0.0f;        // normalized "temperature" of the screen
@@ -272,8 +272,8 @@ void start(void) {
         s_sprites.pos[i * 3 + 1]  = pos[1];
         s_sprites.vel[i * 2 + 0]  = vel[0];
         s_sprites.vel[i * 2 + 1]  = vel[1];
-        s_sprites.col[i * 4 + 0]  = lerpf32(kcol, 0.0f, 1.0f);
-        s_sprites.col[i * 4 + 2]  = lerpf32(kcol, 1.0f, 0.0f);
+        s_sprites.col[i * 4 + 0]  = lerpf32(kcol, 0.1f, 1.0f);
+        s_sprites.col[i * 4 + 2]  = lerpf32(kcol, 1.0f, 0.1f);
 
         total_kcol  += kcol;
       }
@@ -282,9 +282,9 @@ void start(void) {
     // Draw
     // Update clear color based on the temperature
     ntemp         = total_kcol / SPRITES_COUNT;
-    clear_col[0]  = lerpf32(ntemp, 0.0f, 0.9f);
-    clear_col[1]  = 0.0f;
-    clear_col[2]  = lerpf32(ntemp, 0.9f, 0.0f);
+    clear_col[0]  = lerpf32(ntemp, 0.1f, 0.3f);
+    clear_col[1]  = 0.1f;
+    clear_col[2]  = lerpf32(ntemp, 0.2f, 0.1f);
     clear_col[3]  = 0.25f;
 
     glClearColor(clear_col[0], clear_col[1], clear_col[2], clear_col[3]);

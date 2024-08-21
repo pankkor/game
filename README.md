@@ -44,6 +44,6 @@ Binaries are located in `build` directory.
 - `build.sh` - build script.
 
 #### Misc
-- `.clangs` - clangd config to suppress warnings
+- `.clangd` - clangd config to suppress warnings
 - `.lvimrc` - vim local config. Ignore if you don't use vim.
 - `compile_flags.txt` - list of compilation flags used by clangd and `build.sh`.
