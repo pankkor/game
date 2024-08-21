@@ -43,9 +43,10 @@ Binaries are located in `build` directory.
 
 ### Files
 - `src/*.c` - all screensavers, each screensaver is a separate `.c` file.
+- `src/common.h` - common code for screensavers.
 - `build.sh` - build script.
+- `compile_flags.txt` - list of compilation flags used by clangd and `build.sh`.
 
 #### Misc
-- `.clangd` - clangd config to suppress warnings
-- `.lvimrc` - vim local config. Ignore if you don't use vim.
-- `compile_flags.txt` - list of compilation flags used by clangd and `build.sh`.
+- `.clangd` - clangd config.
+- `.lvimrc` - vim local config.
