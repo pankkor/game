@@ -23,15 +23,15 @@
 // Initial Sprite velocities are in [-SPRITE_VEL_MAX, SPRITE_VEL_MAX] range.
 #define SPRITE_VEL_MAX  0.5f
 
-#define VEL_MAX         (SPRITE_VEL_MAX + WIND_VEL_MAX)
+#define VEL_MAX         2.5f
 #define VEL_MAX2        (VEL_MAX * VEL_MAX)
 
 #if 1 // Big and chunky sprites
-#define SPRITE_SIZE     0.02f
-enum {SPRITES_COUNT = 1024};
+#define SPRITE_SIZE     0.175f
+enum {SPRITES_COUNT =  1024};
 #else // Chaos (1M sprites is still ok)
-#define SPRITE_SIZE     0.005f
-enum {SPRITES_COUNT = 1 * 1024 * 1024};
+#define SPRITE_SIZE     0.025f
+enum {SPRITES_COUNT = 1024 * 1024};
 #endif
 
 #define SPRITE_SIZE_05  (SPRITE_SIZE * 0.5f)
@@ -52,19 +52,21 @@ static const char * const s_sprite_vert_src = "                                \
 layout(location = 0) in vec2 v_vert;                                           \
 layout(location = 1) in vec3 v_pos;                                            \
 layout(location = 2) in vec4 v_col;                                            \
+layout(location = 3) in vec2 v_vel;                                            \
                                                                                \
 uniform float iaspect;                                                         \
                                                                                \
 out vec4 f_col;                                                                \
 out vec2 f_pos;                                                                \
+out vec2 f_vel;                                                                \
                                                                                \
 void main(void) {                                                              \
-  float h = mix(1.0, 0.5, v_col.r);                                            \
-  vec3 pos = vec3(v_vert * h, 0.0f) + v_pos;                                   \
+  vec3 pos = vec3(v_vert, 0.0f) + v_pos;                                       \
   pos.x *= iaspect;                                                            \
   gl_Position = vec4(pos, 1.0f);                                               \
   f_col = v_col;                                                               \
   f_pos = vec2(v_pos.x * iaspect, v_pos.y) * 0.5 + 0.5;                        \
+  f_vel = v_vel;                                                               \
 }                                                                              \
 ";
 
@@ -72,19 +74,55 @@ static const char * const s_sprite_frag_src = "                                \
 #version 410 core                                                              \
 in vec4 f_col;                                                                 \
 in vec2 f_pos;                                                                 \
+in vec2 f_vel;                                                                 \
                                                                                \
 uniform vec2  resolution;                                                      \
 uniform float iaspect;                                                         \
                                                                                \
 out vec4 frag_col;                                                             \
                                                                                \
+const float SPRITE_SIZE = "STR(SPRITE_SIZE)";                                  \
+const float VEL_MAX = "STR(VEL_MAX)";                                          \
+                                                                               \
+/* https://iquilezles.org/articles/distfunctions2d/ */                         \
+float sd_oriented_vesica(vec2 p, vec2 a, vec2 b, float w) {                    \
+  float r = 0.5 * length(b - a);                                               \
+  float d = 0.5 * ( r *r - w * w) / w;                                         \
+  vec2  v = (b - a) / r;                                                       \
+  vec2  c = (b + a) * 0.5;                                                     \
+  vec2  q = 0.5 * abs(mat2(v.y, v.x, -v.x, v.y) *( p - c));                    \
+  vec3  h = r * q.x < d * (q.y - r) ? vec3(0.0, r, 0.0) : vec3(-d, 0.0, d + w);\
+  return length(q - h.xy) - h.z;                                               \
+}                                                                              \
+                                                                               \
+float vesica(vec2 vel, vec2 pos) {                                             \
+  vec2  v   = vel / VEL_MAX;                                                   \
+  vec2  v1  = vec2(0.0);                                                       \
+  vec2  v2  = vel * 0.1 * SPRITE_SIZE;                                         \
+  float th  = 0.01 * SPRITE_SIZE;                                              \
+  float ra  = 0.03 * SPRITE_SIZE;                                              \
+  float d   = sd_oriented_vesica(pos, v1, v2, th) - ra;                        \
+  float a   = smoothstep(0.001, -0.001, d);                                    \
+  return a;                                                                    \
+}                                                                              \
+                                                                               \
+float circle(vec2 pos) {\
+  float d = length(pos) - SPRITE_SIZE * 0.05;                                  \
+  float a = smoothstep(0.001, -0.001, d);                                      \
+  return a;                                                                    \
+}                                                                              \
+                                                                               \
 void main(void) {                                                              \
-  float h = mix(1.0, 0.5, f_col.r);                                            \
   vec2 uv = gl_FragCoord.xy / resolution.xy;                                   \
   vec2 p = f_pos - uv;                                                         \
   p.x /= iaspect;                                                              \
-  float d = length(p) - 0.005 * h;                                             \
-  float a = smoothstep(0.001, -0.001, d);                                      \
+  "
+#if 1 // vesica() scales particle with velocity vector
+  "float a = vesica(f_vel, p);"
+#else
+  "float a = circle(p);"
+#endif
+  "                                                                            \
   frag_col = vec4(f_col.rgb, a);                                               \
 }                                                                              \
 ";
@@ -120,10 +158,12 @@ void start(void) {
   GLuint vert_bo;
   GLuint pos_bo;
   GLuint col_bo;
+  GLuint vel_bo;
   glGenVertexArrays(1, &vao);
   glGenBuffers(1, &vert_bo);
   glGenBuffers(1, &pos_bo);
   glGenBuffers(1, &col_bo);
+  glGenBuffers(1, &vel_bo);
 
   GLfloat sprite_verts[] = {
     -SPRITE_SIZE_05, -SPRITE_SIZE_05,
@@ -145,6 +185,27 @@ void start(void) {
       GL_STATIC_DRAW);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
   glEnableVertexAttribArray(0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, pos_bo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.pos), s_sprites.pos,
+      GL_STATIC_DRAW);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+  glVertexAttribDivisor(1, 1);
+  glEnableVertexAttribArray(1);
+
+  glBindBuffer(GL_ARRAY_BUFFER, col_bo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.col), s_sprites.col,
+      GL_STATIC_DRAW);
+  glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, 0);
+  glVertexAttribDivisor(2, 1);
+  glEnableVertexAttribArray(2);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vel_bo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.vel), s_sprites.vel,
+      GL_STATIC_DRAW);
+  glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 0, 0);
+  glVertexAttribDivisor(3, 1);
+  glEnableVertexAttribArray(3);
 
   // Logic
   // Scale bounds normalized to [-1;1] to match monitor aspect ratio
@@ -244,7 +305,8 @@ void start(void) {
         vel[0]      = s_sprites.vel[i * 2 + 0];
         vel[1]      = s_sprites.vel[i * 2 + 1];
 
-        f32 kcol    = (vel[0] * vel[0] + vel[1] * vel[1]) / (VEL_MAX2);
+        // Bias towards 1.0
+        f32 kcol    = (vel[0] * vel[0] + vel[1] * vel[1]) / VEL_MAX2;
         kcol        = clampf32(kcol, 0.0f, 1.0f);
 
         // Apply wind
@@ -262,6 +324,8 @@ void start(void) {
 
         pos[0]      = clampf32(pos[0], bounds[0], bounds[1]);
         pos[1]      = clampf32(pos[1], bounds[2], bounds[3]);
+        vel[0]      = clampf32(vel[0], -VEL_MAX, VEL_MAX);
+        vel[1]      = clampf32(vel[1], -VEL_MAX, VEL_MAX);
 
         s_sprites.pos[i * 3 + 0]  = pos[0];
         s_sprites.pos[i * 3 + 1]  = pos[1];
@@ -289,18 +353,13 @@ void start(void) {
 
     // Draw sprites
     glBindBuffer(GL_ARRAY_BUFFER, pos_bo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.pos), s_sprites.pos,
-        GL_STATIC_DRAW);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    glVertexAttribDivisor(1, 1);
-    glEnableVertexAttribArray(1);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(s_sprites.pos), s_sprites.pos);
 
     glBindBuffer(GL_ARRAY_BUFFER, col_bo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(s_sprites.col), s_sprites.col,
-        GL_STATIC_DRAW);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, 0);
-    glVertexAttribDivisor(2, 1);
-    glEnableVertexAttribArray(2);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(s_sprites.col), s_sprites.col);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vel_bo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(s_sprites.vel), s_sprites.vel);
 
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, SPRITES_COUNT);
     CHECK_GL_ERROR();
@@ -322,6 +381,7 @@ void start(void) {
 
   glDeleteBuffers(1, &vert_bo);
   glDeleteBuffers(1, &col_bo);
+  glDeleteBuffers(1, &vel_bo);
   glDeleteVertexArrays(1, &vao);
 
   window_shutdown(&w);
