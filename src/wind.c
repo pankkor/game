@@ -231,7 +231,7 @@ void start(void) {
     s_sprites.vel[i * 2 + 0]  = lerpf32(kvel0, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
     s_sprites.vel[i * 2 + 1]  = lerpf32(kvel1, -SPRITE_VEL_MAX, SPRITE_VEL_MAX);
 
-    // Rest of s_sprites.col is determined in during update
+    // Rest of s_sprites.col is determined during update
     s_sprites.col[i * 4 + 1]  = 0.1f;
     s_sprites.col[i * 4 + 3]  = 0.9f;
   }
