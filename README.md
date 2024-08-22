@@ -6,14 +6,17 @@
 - Not optimizated.
 - To exit press ESC or Ctrl-C.
 
+### Supported Platforms
+- macOS AArch64 (clang)
+
 ## Molecular Wind screensaver
 `src/wind.c`
 
 Render up to 1M instanced ~~sprites~~ particles that bounce around the edges,
 and are blown by the wind. They change color depending on their speed.
 
-- Sprite update is simulated on CPU without any optimization.
-- Ofc compiler fails to autovectorize sprite update.
+- Particle update is simulated on CPU without any optimizations.
+- Ofc compiler fails to autovectorize the update.
 
 https://github.com/user-attachments/assets/cd8e88c2-d747-4fd0-91fe-a7a5d4a00b77
 
@@ -23,12 +26,9 @@ https://github.com/user-attachments/assets/cd8e88c2-d747-4fd0-91fe-a7a5d4a00b77
 Keys and Keyholes flying around and colliding.
 Matching keys and keyholes dissapear.
 
-- Simple collision of circles on CPU.
+- Simple cirle elastic collision simulated on CPU.
 
 https://github.com/user-attachments/assets/eb9552e4-32e3-4b9c-8be6-1a401453ae10
-
-### Supported Platforms
-- macOS AArch64 (clang)
 
 ### Build all
 ```
