@@ -15,7 +15,7 @@ and are blown by the wind. They change color depending on their speed.
 - Sprite update is simulated on CPU without any optimization.
 - Ofc compiler fails to autovectorize sprite update.
 
-https://github.com/user-attachments/assets/dc945f6e-4408-4466-b5a7-13c9fad3a36e
+https://github.com/user-attachments/assets/cd8e88c2-d747-4fd0-91fe-a7a5d4a00b77
 
 ## Keys and Keyholes screensaver
 `src/keyhole.c`
