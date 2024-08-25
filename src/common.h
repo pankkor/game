@@ -93,6 +93,7 @@ extern CGSSpaceID CGSGetActiveSpace(CGSConnectionID connection);
 
 extern void CGSAddWindowsToSpaces(CGSConnectionID cid, CFArrayRef windows,
     CFArrayRef spaces);
+
 // --------------------------------------
 // syscall
 // --------------------------------------
@@ -147,6 +148,7 @@ i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
 #define SYS_exit        1
 #define SYS_write       4
 
+// TODO EINTR
 NO_RETURN void exit(i32 ec) {
   syscall1(SYS_exit, ec);
   __builtin_unreachable();
@@ -254,7 +256,7 @@ void print_f32(i32 fd, f32 v) {
   if (buf) {
     syscall3(SYS_write, fd, (i64)buf, buf_size);
   } else {
-    // TODO: well, that's wrong for floats that don't fit into i64:)
+    // TODO: well, that's wrong for floats that don't fit into i64 :)
     i64 integer         = (i64)v;
 
     // reset sign
@@ -516,7 +518,7 @@ void window_init(struct window *w, int is_full_screen) {
   }
 
 #if 0
-  // Add window to the active Workspace. The window will always be in your face.
+  // Add window to the active Workspace.
   // This uses CFArray and CFNumber and requires to link with
   //   -framework CoreFoundation
   CGSSpaceID spid = CGSGetActiveSpace(cid);
@@ -709,7 +711,8 @@ void event_loop_init(struct event_loop *loop) {
 }
 
 // Runs Run Loop one time, updates input events (loop->keycodes)
-void event_loop_step(struct event_loop *loop) {
+// Returns true if input was read.
+b32 event_loop_step(struct event_loop *loop) {
 #if 0
   // Signal and wakeup are not needed since we only have one RunLoop atm.
   CFRunLoopSourceSignal(loop->source);
@@ -717,8 +720,8 @@ void event_loop_step(struct event_loop *loop) {
 #else
   (void)loop;
 #endif
-  // TODO this should be in a loop
-  CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1);
+  CFRunLoopRunResult res = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1);
+  return res == kCFRunLoopRunHandledSource;
 }
 
 void event_loop_shutdown(struct event_loop *loop) {
