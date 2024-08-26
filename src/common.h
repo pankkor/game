@@ -28,6 +28,18 @@ typedef i32                 b32;
     (b) = tmp;                                                                 \
   } while (0)
 
+#define MAX(a, b) ({                                                           \
+    __typeof__(a) a_ = (a);                                                    \
+    __typeof__(b) b_ = (b);                                                    \
+    a_ >= b_ ? a_ : b_;                                                        \
+})
+
+#define MIN(a, b) ({                                                           \
+    __typeof__(a) a_ = (a);                                                    \
+    __typeof__(b) b_ = (b);                                                    \
+    a_ <= b_ ? a_ : b_;                                                        \
+})
+
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
@@ -97,7 +109,7 @@ extern void CGSAddWindowsToSpaces(CGSConnectionID cid, CFArrayRef windows,
 // --------------------------------------
 // syscall
 // --------------------------------------
-i64 syscall1(i64 sys_num, i64 a0) {
+static i64 syscall1(i64 sys_num, i64 a0) {
   i64 ret;
   __asm__ volatile (
     "mov x16,     %[sys_num]\n"   // syscall number
@@ -111,7 +123,7 @@ i64 syscall1(i64 sys_num, i64 a0) {
   return ret;
 }
 
-i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
+static i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
   i64 ret;
   __asm__ volatile (
     "mov x16,     %[sys_num]\n"
@@ -126,7 +138,7 @@ i64 syscall2(i64 sys_num, i64 a0, i64 a1) {
   return ret;
 }
 
-i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
+static i64 syscall3(i64 sys_num, i64 a0, i64 a1, i64 a2) {
   i64 ret;
   __asm__ volatile (
     "mov x16,     %[sys_num]\n"
@@ -161,8 +173,7 @@ NO_RETURN void exit(i32 ec) {
 #define STDOUT          1
 #define STDERR          2
 
-// meh
-i64 cstr_len(const char *cstr) {
+static i64 cstr_len(const char *cstr) {
   i64 ret = 0;
   if (cstr) {
     while (*cstr++) {
@@ -172,11 +183,12 @@ i64 cstr_len(const char *cstr) {
   return ret;
 }
 
-void print_buf(i32 fd, const char *buf, i32 size) {
+static void print_buf(i32 fd, const char *buf, i32 size) {
   syscall3(SYS_write, fd, (i64)buf, size);
 }
 
-void print_cstr(i32 fd, const char *cstr) {
+// Print \0 terminated string
+static void print_cstr(i32 fd, const char *cstr) {
   if (cstr) {
     i64 size = cstr_len(cstr);
     syscall3(SYS_write, fd, (i64)cstr, size);
@@ -185,7 +197,8 @@ void print_cstr(i32 fd, const char *cstr) {
   }
 }
 
-void print_u64x(i32 fd, u64 v) {
+// Print hex representation of u64
+static void print_u64x(i32 fd, u64 v) {
   u8 buf[18];
   buf[0] = '0';
   buf[1] = 'x';
@@ -198,14 +211,9 @@ void print_u64x(i32 fd, u64 v) {
   syscall3(SYS_write, fd, (i64)buf, sizeof(buf) / sizeof(buf[0]));
 }
 
-void print_i64(i32 fd, i64 v) {
+// Helper
+static void print_zero_neg_u64_(i32 fd, u64 v, i32 zero_precision, b32 is_neg) {
   u8 buf[21]; // sign (1 char) + 2^64(20 chars)
-
-  i32 is_neg = 0;
-  if (v < 0) {
-    is_neg = 1;
-    v = -v;
-  }
 
   u8 *buf_end = buf + sizeof(buf) / sizeof(buf[0]);
   u8 *buf_cur = buf_end;
@@ -215,13 +223,39 @@ void print_i64(i32 fd, i64 v) {
     v = v / 10;
   } while (v);
 
+  i32 buf_size = buf_end - buf_cur;
+  for (int i = buf_size, size = MIN(20, zero_precision); i < size; ++i) {
+    *--buf_cur = '0';
+  }
+
   if (is_neg) {
     *--buf_cur = '-';
   }
   syscall3(SYS_write, fd, (i64)buf_cur, buf_end - buf_cur);
 }
 
-void print_f32(i32 fd, f32 v) {
+static void print_zero_i64(i32 fd, i64 v, i32 zero_precision) {
+  b32 is_neg = 0;
+  if (v < 0) {
+    is_neg = 1;
+    v = -v;
+  }
+  print_zero_neg_u64_(fd, v, zero_precision, is_neg);
+}
+
+static void print_zero_u64(i32 fd, u64 v, i32 zero_precision) {
+  print_zero_neg_u64_(fd, v, zero_precision, 0);
+}
+
+static void print_i64(i32 fd, i64 v) {
+  print_zero_i64(fd, v, 0);
+}
+
+static void print_u64(i32 fd, u64 v) {
+  print_zero_u64(fd, v, 0);
+}
+
+static void print_f32(i32 fd, f32 v) {
   const char *buf = 0;
   u8 buf_size;
 
@@ -256,18 +290,21 @@ void print_f32(i32 fd, f32 v) {
   if (buf) {
     syscall3(SYS_write, fd, (i64)buf, buf_size);
   } else {
-    // TODO: well, that's wrong for floats that don't fit into i64 :)
-    i64 integer         = (i64)v;
-
     // reset sign
-    union f32u32 fracfu = {.f = fu.f - integer};
-    fracfu.u            &= 0x7FFFFFFF;
+    fu.u                &= 0x7FFFFFFF;
 
-    i64 fraci           = fracfu.f * 1000.0f;
+    // TODO: well, that's wrong for floats that don't fit into u64 :)
+    u64 integer         = (u64)fu.f;
 
-    print_i64(fd, integer);
+    f32 frac            = fu.f - integer;
+    i64 fraci           = frac * 1000.0f;     // 3 digits precision
+
+    if (v < 0) {
+      syscall3(SYS_write, fd, (i64)"-", 1);
+    }
+    print_u64(fd, integer);
     syscall3(SYS_write, fd, (i64)".", 1);
-    print_i64(fd, fraci);
+    print_zero_i64(fd, fraci, 3);             // 3 digits precision
   }
 }
 
@@ -405,7 +442,7 @@ f32 sinf32(f32 turns) {
   return (x - 1.0f) * (x + 1.0f) * p1 * x;
 }
 
-FORCE_INLINE static i32 is_bit_set(i32 flags, i32 bit) {
+FORCE_INLINE static b32 is_bit_set(i32 flags, i32 bit) {
   return (flags & bit) == bit;
 }
 
@@ -457,7 +494,7 @@ struct window {
 };
 
 // Init transparent window and OpenGL context
-void window_init(struct window *w, int is_full_screen) {
+static void window_init(struct window *w, b32 is_full_screen) {
   CGDirectDisplayID did;
   CGWindowID        wid;
   CGSConnectionID   cid;
@@ -491,7 +528,8 @@ void window_init(struct window *w, int is_full_screen) {
     cg_err = CGSNewRegionWithRect(&win_rect, &view_region);
     EXPECT(!cg_err, "CGSNewRegionWithRect() failed\n");
 
-    cg_err = CGSNewWindow(cid, kCGBackingStoreBuffered, 0.0, 0.0, win_region, &wid);
+    cg_err = CGSNewWindow(cid, kCGBackingStoreBuffered, 0.0, 0.0, win_region,
+        &wid);
     EXPECT(!cg_err, "CGSNewWindow() failed\n");
 
     // clear windows surface
@@ -594,7 +632,7 @@ void window_init(struct window *w, int is_full_screen) {
   };
 }
 
-void window_shutdown(struct window *w) {
+static void window_shutdown(struct window *w) {
   if (w->glctx) {
     CGLDestroyContext(w->glctx);
   }
@@ -611,7 +649,7 @@ void window_shutdown(struct window *w) {
 
 // Swap and present.
 // Returns 0 on success.
-i32 window_flush(struct window *w) {
+static i32 window_flush(struct window *w) {
   CGLError cgl_err = CGLFlushDrawable(w->glctx);
   WARN_IF(cgl_err, "CGLFlushDrawable() failed\n");
   return cgl_err;
@@ -649,7 +687,7 @@ struct event_loop {
   CFRunLoopRef        runloop;
 };
 
-CGEventRef event_handler(CGEventTapProxy proxy, CGEventType type,
+static CGEventRef event_handler(CGEventTapProxy proxy, CGEventType type,
     CGEventRef event, void *userdata)
 {
   (void)proxy;
@@ -681,7 +719,7 @@ CGEventRef event_handler(CGEventTapProxy proxy, CGEventType type,
 }
 
 // Must be paired with event_loop_shutdown()
-void event_loop_init(struct event_loop *loop) {
+static void event_loop_init(struct event_loop *loop) {
   CFMachPortRef       event_tap;
   CGEventMask         event_mask;
   CFRunLoopSourceRef  source;
@@ -712,7 +750,7 @@ void event_loop_init(struct event_loop *loop) {
 
 // Runs Run Loop one time, updates input events (loop->keycodes)
 // Returns true if input was read.
-b32 event_loop_step(struct event_loop *loop) {
+static b32 event_loop_step(struct event_loop *loop) {
 #if 0
   // Signal and wakeup are not needed since we only have one RunLoop atm.
   CFRunLoopSourceSignal(loop->source);
@@ -724,7 +762,7 @@ b32 event_loop_step(struct event_loop *loop) {
   return res == kCFRunLoopRunHandledSource;
 }
 
-void event_loop_shutdown(struct event_loop *loop) {
+static void event_loop_shutdown(struct event_loop *loop) {
   CGEventTapEnable(loop->event_tap, 0);
   CFMachPortInvalidate(loop->event_tap);
   CFRunLoopRemoveSource(loop->runloop, loop->source, kCFRunLoopDefaultMode);
@@ -751,7 +789,8 @@ void event_loop_shutdown(struct event_loop *loop) {
   } while (0)
 
 // Create glCreateProgram and log compilation and linker errors
-GLuint create_gl_shader_program(const char *vert_glsl, const char *frag_glsl) {
+static GLuint create_gl_shader_program(const char *vert_glsl,
+    const char *frag_glsl) {
   GLuint prog = glCreateProgram();
   GLint is_ok;
   GLchar info[1024];

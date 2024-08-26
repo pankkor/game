@@ -3,8 +3,11 @@
 -Wextra
 -Wpedantic
 -Wno-fixed-enum-extension
+-Wno-gnu-statement-expression-from-macro-expansion
+-Wno-unused-function
 -O1
 -g
+-fno-builtin
 -nostdlib
 -e _start
 -framework OpenGL
